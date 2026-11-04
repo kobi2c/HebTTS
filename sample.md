@@ -20,7 +20,7 @@ docker run --rm -v %CD%:/app hebtts:latest python sample.py --checkpoint-list
 
 ### 2. Synthesize from Text File
 
-When using `--input`, the output audio file defaults automatically to the base name of the input file (e.g. `sample.txt` -> `sample.wav`):
+When using `--input` (or `--in-file`), the output audio file defaults automatically to the same directory and stem as the input file (e.g. `path/to/sample.txt` -> `path/to/sample.wav`):
 
 ```bash
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --input sample.txt
@@ -34,9 +34,6 @@ docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --input s
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker 1 --text "שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית." --output sample.wav
 ```
 
-docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker 1 \
-  --text "שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית." \
-  --output sample.wav
 
 ---
 
@@ -48,11 +45,11 @@ docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker
 | `--checkpoint-list`| Flag | `False` | Display predefined checkpoints and their status |
 | `--speaker` | `str` | `1` | Speaker number (`1`, `2`, `3`) or speaker ID (`shaul`, `osim`, `geek`) |
 | `--checkpoint` | `str` | `1` | Checkpoint number (`1`) or path to `.pt` checkpoint file |
-| `--input`, `--in-file` | `str` | `None` | Path to text file (output defaults to `<stem>.wav`) |
+| `--input`, `--in-file` | `str` | `None` | Path to text file (output defaults to `<input_dir>/<input_stem>.wav`) |
 | `--text` | `str` | `None` | Direct Hebrew text to synthesize |
-| `--output` | `str` | `None` | Custom output `.wav` path (defaults to input stem or `sample.wav`) |
-| `--speaker-audio` | `str` | `None` | Path to custom reference audio for voice cloning |
-| `--speaker-text` | `str` | `None` | Transcript of the custom reference audio |
+| `--output` | `str` | `None` | Custom output `.wav` path (defaults to same directory/stem as input or `sample.wav`) |
+| `--clone-wav` | `str` | `None` | Reference audio file path for voice cloning (.wav) |
+| `--clone-txt` | `str` | `None` | Reference text file path whose contents provide the clone transcript |
 | `--temperature` | `float`| `1.0` | Sampling temperature (lower = more deterministic) |
 | `--top-k` | `int` | `50` | Top-K sampling cutoff |
 | `--mbd` | Flag | `False` | Enable Multi-Band Diffusion vocoder |
@@ -74,10 +71,16 @@ docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker
 To clone a custom voice, supply both the prompt audio and its corresponding transcript:
 ```bash
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py \
-  --speaker-audio my_voice.wav \
-  --speaker-text "טקסט התואם להקלטת הקול" \
-  --input sample.txt \
-  --output cloned_output.wav
+  --clone-wav clone.wav \
+  --clone-txt clone.txt \
+  --input sample.txt
+```
+
+#### Preparing Audio Prompts (MP3 to WAV)
+HebTTS (VALL-E / EnCodec) operates on **24 kHz mono 16-bit WAV**. You can convert MP3 files using ffmpeg directly through Docker:
+```bash
+# Convert MP3 to 24kHz mono WAV
+docker run --rm -v %CD%:/app hebtts:latest ffmpeg -i input.mp3 -ar 24000 -ac 1 output.wav
 ```
 
 ### Adjusting Generation Parameters
@@ -107,3 +110,6 @@ sampler.run([
     "--output", "output.wav"
 ])
 ```
+
+
+docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --clone-wav data/clone.wav --clone-txt data/clone.txt --input data/sample.txt
