@@ -28,4 +28,8 @@ docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --input s
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python infer.py --checkpoint checkpoint.pt --output-dir ./out --text "שלום עולם"
 ```
 
+### 4. Gradio Web Interface (`GradioPage.py`)
+```bash
+docker run --gpus all --rm -p 7860:7860 -v %CD%:/app hebtts:latest python GradioPage.py
 ```
+Open your browser at `http://localhost:7860`.
