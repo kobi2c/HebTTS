@@ -145,7 +145,7 @@ def load_model(checkpoint, device):
     if not checkpoint:
         return None
 
-    checkpoint = torch.load(checkpoint, map_location=device)
+    checkpoint = torch.load(checkpoint, map_location=device, weights_only=False)
 
     args = AttributeDict(checkpoint)
     # args.num_text_tokens = 512

@@ -21,7 +21,7 @@ def load_model(checkpoint, device):
     if not checkpoint:
         return None
 
-    checkpoint = torch.load(checkpoint, map_location=device)
+    checkpoint = torch.load(checkpoint, map_location=device, weights_only=False)
 
     args = AttributeDict(checkpoint)
     model = get_model(args)
@@ -90,6 +90,8 @@ def infer_texts(
         )
 
         audio_path = Path(output_dir) / filename
+        if not audio_path.suffix:
+            audio_path = audio_path.with_suffix(".wav")
 
         if args.mbd:
             samples = audio_tokenizer.mbd_decode(encoded_frames.transpose(2, 1))
