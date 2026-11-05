@@ -13,6 +13,7 @@ from valle.data.collation import get_text_token_collater
 from valle.models import get_model
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from utils import AttributeDict
+from nikud_converter import convert_nikud_text
 
 
 class Sampler:
@@ -134,7 +135,12 @@ class Sampler:
         top_k=50,
         temperature=1.0,
         mbd=False,
+        nikud_converter=True,
     ):
+        if nikud_converter:
+            text = convert_nikud_text(text)
+            prompt_text = convert_nikud_text(prompt_text)
+
         text_without_space = [replace_chars(f"{prompt_text} {text}").strip().replace(" ", "_")]
         tokens = alef_bert_tokenizer._tokenize(text_without_space)
         prompt_text_without_space = [replace_chars(f"{prompt_text}").strip().replace(" ", "_")]
@@ -181,6 +187,7 @@ class Sampler:
         temperature=1.0,
         mbd=False,
         silence_duration_s=0.3,
+        nikud_converter=True,
     ):
         if isinstance(lines, str):
             lines = [lines]
@@ -200,6 +207,7 @@ class Sampler:
                 top_k=top_k,
                 temperature=temperature,
                 mbd=mbd,
+                nikud_converter=nikud_converter,
             )
 
         print(f"Found {len(lines)} lines in input. Generating audio...")
@@ -219,6 +227,7 @@ class Sampler:
                 top_k=top_k,
                 temperature=temperature,
                 mbd=mbd,
+                nikud_converter=nikud_converter,
             )
             if seg.shape[-1] > 0:
                 segments.append(seg)
@@ -302,6 +311,12 @@ class Sampler:
             "--mbd",
             action="store_true",
             help="Enable Multi-Band Diffusion vocoder",
+        )
+        parser.add_argument(
+            "--nikud-converter",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Enable automatic phonetic Nikud / Ktiv-Male disambiguation (default: True)",
         )
         return parser
 
@@ -423,6 +438,7 @@ class Sampler:
             top_k=args.top_k,
             temperature=args.temperature,
             mbd=args.mbd,
+            nikud_converter=args.nikud_converter,
         )
 
         torchaudio.save(str(output_path), samples, 24000)

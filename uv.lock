@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.11.*"
 
 [manifest]
@@ -689,6 +689,7 @@ dependencies = [
     { name = "numpy" },
     { name = "omegaconf" },
     { name = "phonemizer" },
+    { name = "phonikud" },
     { name = "torch" },
     { name = "torchaudio" },
     { name = "torchmetrics" },
@@ -705,6 +706,7 @@ requires-dist = [
     { name = "numpy", specifier = "<2" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "phonemizer", specifier = ">=3.3.0" },
+    { name = "phonikud", specifier = ">=0.4.1" },
     { name = "torch", specifier = ">=2.1.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchaudio", specifier = ">=2.1.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchmetrics", specifier = ">=1.7.2" },
@@ -1480,6 +1482,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c4/ff/3574c55a71b42ad6944a5bf0a7d59f0251ea2ba47e51a5c4005e32e9145c/phonemizer-3.3.0.tar.gz", hash = "sha256:5e0c38122effe0b331a24e674aff256874ece169d70a9cf1120337b56f8e3d0c", size = 88564, upload-time = "2024-08-01T14:29:50.299Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b6/23/e8d67c2052e132181c4c9027c2d8ed9e37e8acb27acfc13ed2d0c41ed850/phonemizer-3.3.0-py3-none-any.whl", hash = "sha256:17afaa98691fe73b025dd8d8727b0e67cc376c5e7ee27590853e457fb3f43602", size = 103800, upload-time = "2024-08-01T14:29:47.572Z" },
+]
+
+[[package]]
+name = "phonikud"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorlog" },
+    { name = "num2words" },
+    { name = "regex" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/65/a7/e9c23eab2954ac05eaac8377b740e4c193205b9b0b8502c8f4fd41bef584/phonikud-0.4.1.tar.gz", hash = "sha256:f02b4acacfd7ca648d1814c2f62c1881d7fd1d046d79a813eb96f4b45896a0a9", size = 158174, upload-time = "2025-09-02T04:25:40.82Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/4f/c4f5b8240565d54dd4c14e1956aa126969b3a1fe3bce82a147452433489e/phonikud-0.4.1-py3-none-any.whl", hash = "sha256:55fe3545d91448b0e5499154d44966ef363273e8d3131705ffa0b70d29db1e98", size = 23697, upload-time = "2025-09-02T04:25:39.561Z" },
 ]
 
 [[package]]

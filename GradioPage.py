@@ -18,6 +18,7 @@ from sample import Sampler
 from valle.data import AudioTokenizer, tokenize_audio
 from valle.data.collation import get_text_token_collater
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
+from nikud_converter import convert_nikud_text, has_nikud
 
 
 class GradioPage:
@@ -39,6 +40,7 @@ class GradioPage:
         "mbd",
         "seed_number",
         "randomize_seed",
+        "nikud_converter",
     ]
 
     def __init__(self, sampler: Optional[Sampler] = None) -> None:
@@ -87,6 +89,7 @@ class GradioPage:
             "mbd": False,
             "seed_number": 420,
             "randomize_seed": True,
+            "nikud_converter": True,
         }
 
     def load_model_if_needed(
@@ -188,8 +191,9 @@ class GradioPage:
         mbd: bool,
         seed_number: int,
         randomize_seed: bool,
+        nikud_converter: bool = True,
         progress: gr.Progress = gr.Progress(track_tqdm=True),
-    ) -> Tuple[Tuple[int, np.ndarray], int]:
+    ) -> Tuple[Tuple[int, np.ndarray], int, str]:
         if not text or not text.strip():
             raise gr.Error("Please provide Hebrew text to synthesize.")
 
@@ -249,6 +253,7 @@ class GradioPage:
                 top_k=int(top_k),
                 temperature=float(temperature),
                 mbd=mbd,
+                nikud_converter=nikud_converter,
             )
             if seg.shape[-1] > 0:
                 segments.append(seg)
@@ -265,7 +270,12 @@ class GradioPage:
         if max_val > 1.0:
             audio_np = audio_np / max_val
 
-        return (24000, audio_np), seed
+        # Converted Ktiv-Male text if disambiguation was applied
+        ktiv_male_text = ""
+        if nikud_converter and has_nikud(text):
+            ktiv_male_text = convert_nikud_text(text)
+
+        return (24000, audio_np), seed, ktiv_male_text
 
     def build_interface(self) -> gr.Blocks:
         checkpoints = self.get_available_checkpoints()
@@ -372,6 +382,14 @@ class GradioPage:
                         label="Or Upload Input Text File (.txt)",
                         file_types=[".txt"],
                     )
+                    ktiv_male_display = gr.Textbox(
+                        label="Phonetic Ktiv-Male (Disambiguated)",
+                        lines=3,
+                        interactive=False,
+                        show_copy_button=True,
+                        placeholder="Phonetic Ktiv-Male text will appear here if Nikud disambiguation is applied...",
+                        info="Read-only view showing vocalized words converted into disambiguated phonetic Ktiv-Male.",
+                    )
 
                     generate_button = gr.Button("⚡ Generate Speech", variant="primary", size="lg")
                     output_audio = gr.Audio(
@@ -392,6 +410,11 @@ class GradioPage:
                             step=0.05,
                             label="Inter-sentence Pause (seconds)",
                             info="Silence duration inserted between lines.",
+                        )
+                        nikud_checkbox = gr.Checkbox(
+                            label="Phonetic Nikud / Ktiv-Male Disambiguation",
+                            value=True,
+                            info="Use phonikud to phonetically convert vocalized words to Ktiv-Male.",
                         )
                         mbd_checkbox = gr.Checkbox(
                             label="Multi-Band Diffusion (MBD) Vocoder",
@@ -463,21 +486,41 @@ class GradioPage:
                 outputs=[clone_text],
             )
 
-            # Populate text input from uploaded text file
-            def on_text_file_upload(file: Optional[Any]) -> Union[str, Dict[str, Any]]:
+            # Populate text input and preview Ktiv-Male from uploaded text file
+            def on_text_file_upload(file: Optional[Any], enabled: bool) -> Tuple[Union[str, Dict[str, Any]], str]:
                 if file is not None:
                     try:
                         filepath = file.name if hasattr(file, "name") else str(file)
                         with open(filepath, "r", encoding="utf-8") as f:
-                            return f.read().strip()
+                            content = f.read().strip()
+                            km = convert_nikud_text(content) if (enabled and has_nikud(content)) else ""
+                            return content, km
                     except Exception as e:
-                        return f"Error reading file: {e}"
-                return gr.update()
+                        return f"Error reading file: {e}", ""
+                return gr.update(), gr.update()
 
             text_file_upload.upload(
                 fn=on_text_file_upload,
-                inputs=[text_file_upload],
-                outputs=[text_input],
+                inputs=[text_file_upload, nikud_checkbox],
+                outputs=[text_input, ktiv_male_display],
+            )
+
+            # Preview Ktiv-Male when text editing finishes or nikud toggle changes
+            def on_text_or_nikud_change(text_val: str, enabled: bool) -> str:
+                if enabled and text_val and has_nikud(text_val):
+                    return convert_nikud_text(text_val)
+                return ""
+
+            text_input.blur(
+                fn=on_text_or_nikud_change,
+                inputs=[text_input, nikud_checkbox],
+                outputs=[ktiv_male_display],
+            )
+
+            nikud_checkbox.change(
+                fn=on_text_or_nikud_change,
+                inputs=[text_input, nikud_checkbox],
+                outputs=[ktiv_male_display],
             )
 
             # Generate Audio
@@ -496,8 +539,9 @@ class GradioPage:
                     mbd_checkbox,
                     seed_number,
                     randomize_seed,
+                    nikud_checkbox,
                 ],
-                outputs=[output_audio, seed_number],
+                outputs=[output_audio, seed_number, ktiv_male_display],
             )
 
             # Settings Import & Export
@@ -514,6 +558,7 @@ class GradioPage:
                 mbd_checkbox,
                 seed_number,
                 randomize_seed,
+                nikud_checkbox,
             ]
 
             export_button.click(
@@ -545,10 +590,12 @@ class GradioPage:
                     defaults["mbd"],
                     defaults["seed_number"],
                     defaults["randomize_seed"],
+                    defaults["nikud_converter"],
                     aud,
                     txt,
                     gr.update(visible=True),
                     gr.update(visible=False),
+                    "",
                 )
 
             reset_button.click(
@@ -560,6 +607,7 @@ class GradioPage:
                     speaker_preview_text,
                     predefined_group,
                     clone_group,
+                    ktiv_male_display,
                 ],
             )
 

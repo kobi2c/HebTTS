@@ -16,8 +16,8 @@ docker run --rm -v %CD%:/app hebtts:latest python sample.py --speaker-list
 # List available checkpoints
 docker run --rm -v %CD%:/app hebtts:latest python sample.py --checkpoint-list
 
-# Custom text, speaker, and output
-docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker geek --text "שלום עולם" --output sample.wav
+# Custom text, speaker, and output (supports Hebrew Nikud)
+docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker geek --text "שָׁלוֹם עָלֵיכֶם" --output sample.wav
 
 # Synthesize from text file (defaults output to <filename>.wav)
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --input sample.txt

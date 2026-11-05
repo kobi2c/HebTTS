@@ -53,6 +53,7 @@ docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker
 | `--temperature` | `float`| `1.0` | Sampling temperature (lower = more deterministic) |
 | `--top-k` | `int` | `50` | Top-K sampling cutoff |
 | `--mbd` | Flag | `False` | Enable Multi-Band Diffusion vocoder |
+| `--nikud-converter` | Flag | `True` | Enable automatic phonetic Nikud / Ktiv-Male disambiguation (use `--no-nikud-converter` to disable) |
 
 ---
 
@@ -82,6 +83,12 @@ HebTTS (VALL-E / EnCodec) operates on **24 kHz mono 16-bit WAV**. You can conver
 # Convert MP3 to 24kHz mono WAV
 docker run --rm -v %CD%:/app hebtts:latest ffmpeg -i input.mp3 -ar 24000 -ac 1 output.wav
 ```
+
+### Hebrew Nikud (Vocalization) Support
+When your input text contains Hebrew Nikud (vocalization marks like `שָׁלוֹם`, `סֵפֶר` vs `סַפָּר`), HebTTS automatically disambiguates pronunciation using `phonikud`:
+- Vocalized words are converted into phonetically unambiguous Ktiv-Male representations (e.g. inserting appropriate `ו`/`י` vowel markers and mapping Sin `שׂ` to `ס`).
+- Unvocalized words remain intact for AlefBERT's contextual tokenizer.
+- Enabled by default; pass `--no-nikud-converter` if you wish to pass raw unvocalized text directly.
 
 ### Adjusting Generation Parameters
 ```bash
