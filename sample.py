@@ -2,7 +2,6 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from omegaconf import OmegaConf
 
 import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
 import torch
@@ -14,18 +13,10 @@ from valle.models import get_model
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from utils import AttributeDict
 from nikud_converter import convert_nikud_text
+from config import Speakers, Checkpoints
 
 
 class Sampler:
-    CHECKPOINTS = {
-        1: {
-            "id": "checkpoint.pt",
-            "description": "VALL-E Hebrew (AR 1.2M / NAR 200K steps on HebDB)",
-            "path": "checkpoint.pt",
-            "gdrive_id": "11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv",
-        }
-    }
-
     DEFAULT_SPEAKER_YAML = "speakers/speakers.yaml"
     DEFAULT_TOKENS_FILE  = "tokenizer/unique_words_tokens_all.k2symbols"
     DEFAULT_VOCAB_FILE   = "tokenizer/vocab.txt"
@@ -40,70 +31,49 @@ class Sampler:
         self.tokens_file = tokens_file
         self.vocab_file = vocab_file
 
-    def get_speakers_dict(self, yaml_path=None):
-        path = yaml_path or self.speaker_yaml
-        if not os.path.exists(path):
-            return {}
-        speakers_conf = OmegaConf.load(path)
-        return OmegaConf.to_container(speakers_conf, resolve=True)
-
     def print_speaker_list(self, speakers=None):
         if speakers is None:
-            speakers = self.get_speakers_dict()
+            speakers = Speakers.list()
         print("\nAvailable speakers:")
         print("-" * 80)
         print(f"{'Number':<8} {'Speaker ID':<15} {'Audio Prompt':<15} {'Text Prompt'}")
         print("-" * 80)
-        for idx, (spk_id, spk_data) in enumerate(speakers.items(), start=1):
-            prompt_text = spk_data.get("text-prompt", "")
+        for idx, spk in enumerate(speakers, start=1):
+            prompt_text = spk.txt
             if len(prompt_text) > 35:
                 prompt_text = prompt_text[:32] + "..."
-            audio_prompt = spk_data.get("audio-prompt", "")
-            print(f"{idx:<8} {spk_id:<15} {audio_prompt:<15} {prompt_text}")
+            audio_prompt = spk.wav_base
+            print(f"{idx:<8} {spk.id:<15} {audio_prompt:<15} {prompt_text}")
         print("-" * 80 + "\n")
 
     def print_checkpoint_list(self):
+        checkpoints = Checkpoints.list()
         print("\nAvailable checkpoints:")
         print("-" * 85)
         print(f"{'Number':<8} {'Checkpoint ID':<20} {'Status':<12} {'Description'}")
         print("-" * 85)
-        for num, meta in self.CHECKPOINTS.items():
-            exists = os.path.exists(meta["path"])
-            status = "Found" if exists else "Missing"
-            print(f"{num:<8} {meta['id']:<20} {status:<12} {meta['description']}")
+        for idx, cp in enumerate(checkpoints, start=1):
+            status = "Found" if cp.exists else "Missing"
+            print(f"{idx:<8} {cp.id:<20} {status:<12} {cp.description}")
         print("-" * 85 + "\n")
 
     def resolve_checkpoint(self, checkpoint_arg):
-        if checkpoint_arg.isdigit():
-            idx = int(checkpoint_arg)
-            if idx in self.CHECKPOINTS:
-                return self.CHECKPOINTS[idx]["path"]
-            else:
-                print(f"Error: Predefined checkpoint number {idx} not found.")
-                self.print_checkpoint_list()
-                sys.exit(1)
-        return checkpoint_arg
+        cp = Checkpoints.find(checkpoint_arg)
+        if cp:
+            return cp.path
+        if os.path.exists(checkpoint_arg):
+            return checkpoint_arg
+        print(f"Error: Predefined checkpoint '{checkpoint_arg}' not found.")
+        self.print_checkpoint_list()
+        sys.exit(1)
 
     def resolve_speaker(self, speaker_arg, speakers=None):
-        if speakers is None:
-            speakers = self.get_speakers_dict()
-
-        if speaker_arg.isdigit():
-            idx = int(speaker_arg)
-            keys = list(speakers.keys())
-            if 1 <= idx <= len(keys):
-                spk_id = keys[idx - 1]
-                return spk_id, speakers[spk_id]
-            else:
-                print(f"Error: Speaker number {idx} not found. Must be between 1 and {len(keys)}.")
-                self.print_speaker_list(speakers)
-                sys.exit(1)
-
-        if speaker_arg in speakers:
-            return speaker_arg, speakers[speaker_arg]
+        spk = Speakers.find(speaker_arg)
+        if spk:
+            return spk.id, {"text-prompt": spk.txt, "audio-prompt": spk.wav}
 
         print(f"Error: Speaker '{speaker_arg}' not found.")
-        self.print_speaker_list(speakers)
+        self.print_speaker_list()
         sys.exit(1)
 
     def load_model(self, checkpoint, device):
@@ -323,7 +293,7 @@ class Sampler:
         elif isinstance(args, list):
             args = self.create_parser().parse_args(args)
 
-        speakers = self.get_speakers_dict()
+        speakers = Speakers.list()
 
         if args.speaker_list:
             self.print_speaker_list(speakers)

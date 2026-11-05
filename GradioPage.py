@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -14,6 +15,14 @@ import torch
 import torchaudio
 
 import utils  # Soundfile audio IO fallback and suppress torchvision warning
+from config import (
+    Config,
+    MbdMode,
+    RandomMode,
+    NikudMode,
+    Speakers,
+    Checkpoints,
+)
 from sample import Sampler
 from valle.data import AudioTokenizer, tokenize_audio
 from valle.data.collation import get_text_token_collater
@@ -22,32 +31,12 @@ from nikud_converter import convert_nikud_text, has_nikud
 
 
 class GradioPage:
-    DEFAULT_TEXT: str = (
-        "שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית.\n"
-        "המודל מאפשר שכפול קול ויצירת דיבור טבעי באיכות גבוהה."
-    )
-
-    SETTINGS_KEYS: List[str] = [
-        "checkpoint",
-        "speaker_mode",
-        "predefined_speaker",
-        "clone_audio",
-        "clone_text",
-        "text",
-        "pause_duration",
-        "temperature",
-        "top_k",
-        "mbd",
-        "seed_number",
-        "randomize_seed",
-        "nikud_converter",
-    ]
-
-    def __init__(self, sampler: Optional[Sampler] = None) -> None:
+    def __init__(self, sampler: Optional[Sampler] = None, config: Optional[Config] = None) -> None:
         self.sampler            : Sampler                         = sampler or Sampler()
+        self.config             : Config                          = (config or Config()).reset()
         self.checkpoint         : Optional[str]                   = None
         self.model              : Optional[torch.nn.Module]       = None
-        self.mbd                : Optional[bool]                  = None
+        self.mbd                : Optional[MbdMode]               = None
         self.audio_tokenizer    : Optional[AudioTokenizer]        = None
         self.text_collater      : Optional[Any]                   = None
         self.alef_bert_tokenizer: Optional[AlefBERTRootTokenizer] = None
@@ -55,49 +44,64 @@ class GradioPage:
         self.device_name        : str                             = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
         self.demo               : Optional[gr.Blocks]             = None
 
-    def get_available_checkpoints(self) -> List[str]:
-        """Returns a list of available local checkpoints."""
-        choices: List[str] = []
-        for num, meta in self.sampler.CHECKPOINTS.items():
-            if os.path.exists(meta["path"]):
-                choices.append(meta["path"])
-        # Also search current directory for any other .pt files
-        for f in Path(".").glob("*.pt"):
-            f_str = str(f)
-            if f_str not in choices:
-                choices.append(f_str)
-        return choices or ["checkpoint.pt"]
+    def update_config_from_ui(
+        self,
+        checkpoint: str,
+        speaker_mode: str,
+        predefined_speaker: str,
+        clone_audio: Optional[str],
+        clone_text: str,
+        text: str,
+        pause_duration: float,
+        temperature: float,
+        top_k: int,
+        mbd: Union[MbdMode, int, bool],
+        seed_number: int,
+        randomize_seed: Union[RandomMode, int, bool],
+        nikud_converter: Union[NikudMode, int, bool],
+    ) -> Config:
+        """Updates self.config attributes in-place from UI components with type conversions."""
+        self.config.checkpoint = str(checkpoint)
+        self.config.speaker_mode = str(speaker_mode)
+        self.config.predefined_speaker = str(predefined_speaker)
+        self.config.clone_audio = clone_audio
+        self.config.clone_text = str(clone_text or "")
+        self.config.text = str(text or "")
+        self.config.pause_duration = float(pause_duration)
+        self.config.temperature = float(temperature)
+        self.config.top_k = int(top_k)
+        self.config.mbd = MbdMode(int(mbd))
+        self.config.seed_number = int(seed_number)
+        self.config.randomize_seed = RandomMode(int(randomize_seed))
+        self.config.nikud_converter = NikudMode(int(nikud_converter))
+        return self.config
 
-    def get_default_settings(self) -> Dict[str, Any]:
-        """Returns the default parameter settings dictionary."""
-        checkpoints = self.get_available_checkpoints()
-        default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
-        speakers_dict = self.sampler.get_speakers_dict()
-        speaker_names = list(speakers_dict.keys())
-        default_speaker = "osim" if "osim" in speaker_names else (speaker_names[0] if speaker_names else "")
-
-        return {
-            "checkpoint": default_checkpoint,
-            "speaker_mode": "Predefined Speaker",
-            "predefined_speaker": default_speaker,
-            "clone_audio": None,
-            "clone_text": "",
-            "text": self.DEFAULT_TEXT,
-            "pause_duration": 0.3,
-            "temperature": 1.0,
-            "top_k": 50,
-            "mbd": False,
-            "seed_number": 420,
-            "randomize_seed": True,
-            "nikud_converter": True,
-        }
+    def get_ui_values_from_config(self) -> List[Any]:
+        """Returns list of values from self.config corresponding to the UI stateful components."""
+        return [
+            self.config.checkpoint,
+            self.config.speaker_mode,
+            self.config.predefined_speaker,
+            self.config.clone_audio,
+            self.config.clone_text,
+            self.config.text,
+            self.config.pause_duration,
+            self.config.temperature,
+            self.config.top_k,
+            int(self.config.mbd),
+            self.config.seed_number,
+            int(self.config.randomize_seed),
+            int(self.config.nikud_converter),
+        ]
 
     def load_model_if_needed(
-        self, checkpoint_path: str, mbd: bool
+        self, checkpoint_path: str, mbd: Union[MbdMode, int, bool] = MbdMode.Disabled
     ) -> Tuple[torch.nn.Module, AudioTokenizer, Any, AlefBERTRootTokenizer]:
         """Loads and caches the VALL-E model and tokenizers."""
         if not os.path.exists(checkpoint_path):
             raise gr.Error(f"Checkpoint '{checkpoint_path}' not found on disk.")
+
+        mbd_mode = MbdMode(int(mbd))
 
         if self.model is None or self.checkpoint != checkpoint_path:
             print(f"Loading checkpoint '{checkpoint_path}' on {self.device} ({self.device_name})...")
@@ -110,10 +114,10 @@ class GradioPage:
             self.checkpoint = checkpoint_path
             print("Model loaded successfully.")
 
-        if self.audio_tokenizer is None or self.mbd != mbd:
-            print(f"Initializing AudioTokenizer (MBD={mbd})...")
-            self.audio_tokenizer = AudioTokenizer(mbd=mbd)
-            self.mbd = mbd
+        if self.audio_tokenizer is None or self.mbd != mbd_mode:
+            print(f"Initializing AudioTokenizer (MBD={mbd_mode.name})...")
+            self.audio_tokenizer = AudioTokenizer(mbd=bool(mbd_mode))
+            self.mbd = mbd_mode
 
         if self.text_collater is None:
             self.text_collater = get_text_token_collater(self.sampler.tokens_file)
@@ -123,106 +127,68 @@ class GradioPage:
 
         return self.model, self.audio_tokenizer, self.text_collater, self.alef_bert_tokenizer
 
-    def audio_to_base64(self, filepath: Optional[str]) -> Optional[Dict[str, str]]:
-        if not filepath or not os.path.exists(filepath):
-            return None
-        with open(filepath, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode("utf-8")
-        ext = os.path.splitext(filepath)[1]
-        return {"ext": ext, "data": encoded}
-
-    def base64_to_audio(self, b64_dict: Optional[Dict[str, str]]) -> Optional[str]:
-        if not b64_dict or "data" not in b64_dict:
-            return None
-        ext = b64_dict.get("ext", ".wav")
-        decoded = base64.b64decode(b64_dict["data"])
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
-            f.write(decoded)
-            return f.name
-
     def export_settings(self, *args: Any) -> str:
-        settings: Dict[str, Any] = {}
-        for key, value in zip(self.SETTINGS_KEYS, args):
-            if key == "clone_audio":
-                settings[key] = self.audio_to_base64(value)
-            else:
-                settings[key] = value
+        if len(args) == 1 and isinstance(args[0], Config):
+            self.config = args[0]
+        elif args:
+            self.update_config_from_ui(*args)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=4, ensure_ascii=False)
+            self.config.saveJson(f.name)
             return f.name
 
     def import_settings(self, file_path: Optional[str]) -> Tuple[Any, ...]:
+        num_fields = len(self.get_ui_values_from_config())
         if not file_path:
-            return tuple([gr.update()] * len(self.SETTINGS_KEYS))
+            return tuple([gr.update()] * num_fields)
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                settings = json.load(f)
+            self.config.loadJson(file_path)
+            return tuple(self.get_ui_values_from_config())
         except Exception as e:
             print(f"Error loading settings: {e}")
-            return tuple([gr.update()] * len(self.SETTINGS_KEYS))
-
-        outputs: List[Any] = []
-        for key in self.SETTINGS_KEYS:
-            if key not in settings:
-                outputs.append(gr.update())
-                continue
-            val = settings[key]
-            if key == "clone_audio":
-                if val is not None and isinstance(val, dict):
-                    outputs.append(self.base64_to_audio(val))
-                else:
-                    outputs.append(None)
-            else:
-                outputs.append(val)
-        return tuple(outputs)
+            return tuple([gr.update()] * num_fields)
 
     def generate_audio(
         self,
-        checkpoint: str,
-        speaker_mode: str,
-        predefined_speaker: str,
-        clone_audio: Optional[str],
-        clone_text: Optional[str],
-        text: str,
-        pause_duration: float,
-        temperature: float,
-        top_k: int,
-        mbd: bool,
-        seed_number: int,
-        randomize_seed: bool,
-        nikud_converter: bool = True,
+        config: Optional[Config] = None,
         progress: gr.Progress = gr.Progress(track_tqdm=True),
     ) -> Tuple[Tuple[int, np.ndarray], int, str]:
-        if not text or not text.strip():
+        cfg = config or self.config
+        if not isinstance(cfg, Config):
+            raise TypeError(f"generate_audio accepts only a Config instance, got {type(cfg).__name__}")
+        self.config = cfg
+
+        if not cfg.text or not cfg.text.strip():
             raise gr.Error("Please provide Hebrew text to synthesize.")
 
-        # 1. Resolve speaker prompt audio and text
-        speakers_dict = self.sampler.get_speakers_dict()
+        mbd_mode = MbdMode(int(cfg.mbd))
+        random_mode = RandomMode(int(cfg.randomize_seed))
+        nikud_mode = NikudMode(int(cfg.nikud_converter))
 
-        if speaker_mode == "Predefined Speaker":
-            if predefined_speaker not in speakers_dict:
-                raise gr.Error(f"Predefined speaker '{predefined_speaker}' not found.")
-            spk_data = speakers_dict[predefined_speaker]
-            prompt_audio = str(Path(self.sampler.speaker_yaml).parent / spk_data["audio-prompt"])
-            prompt_text = spk_data["text-prompt"]
+        # 1. Resolve speaker prompt audio and text
+        if cfg.speaker_mode == "Predefined Speaker":
+            spk = Speakers.find(cfg.predefined_speaker)
+            if not spk:
+                raise gr.Error(f"Predefined speaker '{cfg.predefined_speaker}' not found.")
+            prompt_audio = spk.wav
+            prompt_text = spk.txt
         else:  # Custom Voice Clone
-            if not clone_audio or not os.path.exists(clone_audio):
+            if not cfg.clone_audio or not os.path.exists(cfg.clone_audio):
                 raise gr.Error("Please upload a reference audio (.wav) for voice cloning.")
-            if not clone_text or not clone_text.strip():
+            if not cfg.clone_text or not cfg.clone_text.strip():
                 raise gr.Error("Please provide reference transcript text corresponding to the clone audio.")
-            prompt_audio = clone_audio
-            prompt_text = clone_text.strip()
+            prompt_audio = cfg.clone_audio
+            prompt_text = cfg.clone_text.strip()
 
         # 2. Seed handling
-        if randomize_seed:
+        if random_mode == RandomMode.Enabled:
             seed = int(torch.randint(0, 2**32 - 1, (1,)).item())
         else:
-            seed = int(seed_number)
+            seed = int(cfg.seed_number)
         torch.manual_seed(seed)
 
         # 3. Load model and tokenizers
-        model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.load_model_if_needed(checkpoint, mbd)
+        model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.load_model_if_needed(cfg.checkpoint, mbd_mode)
 
         # 4. Tokenize reference audio prompt
         try:
@@ -232,11 +198,11 @@ class GradioPage:
             raise gr.Error(f"Failed to process reference audio: {str(e)}")
 
         # 5. Split input text into lines
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        lines = [line.strip() for line in cfg.text.splitlines() if line.strip()]
         if not lines:
             raise gr.Error("No valid text lines found.")
 
-        silence = torch.zeros((1, int(24000 * float(pause_duration))))
+        silence = torch.zeros((1, int(24000 * float(cfg.pause_duration))))
         segments: List[torch.Tensor] = []
 
         for i, line in enumerate(lines):
@@ -250,14 +216,14 @@ class GradioPage:
                 audio_prompts=audio_prompts,
                 prompt_text=prompt_text,
                 device=self.device,
-                top_k=int(top_k),
-                temperature=float(temperature),
-                mbd=mbd,
-                nikud_converter=nikud_converter,
+                top_k=int(cfg.top_k),
+                temperature=float(cfg.temperature),
+                mbd=bool(mbd_mode),
+                nikud_converter=bool(nikud_mode),
             )
             if seg.shape[-1] > 0:
                 segments.append(seg)
-                if i < len(lines) - 1 and pause_duration > 0:
+                if i < len(lines) - 1 and cfg.pause_duration > 0:
                     segments.append(silence)
 
         if not segments:
@@ -272,27 +238,26 @@ class GradioPage:
 
         # Converted Ktiv-Male text if disambiguation was applied
         ktiv_male_text = ""
-        if nikud_converter and has_nikud(text):
-            ktiv_male_text = convert_nikud_text(text)
+        if nikud_mode == NikudMode.Enabled and has_nikud(cfg.text):
+            ktiv_male_text = convert_nikud_text(cfg.text)
 
         return (24000, audio_np), seed, ktiv_male_text
 
     def build_interface(self) -> gr.Blocks:
-        checkpoints = self.get_available_checkpoints()
+        checkpoints = [c.path for c in Checkpoints.list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
 
-        speakers_dict = self.sampler.get_speakers_dict()
-        speaker_names = list(speakers_dict.keys())
-        default_speaker = "osim" if "osim" in speaker_names else (speaker_names[0] if speaker_names else "")
+        speakers = Speakers.list()
+        speaker_names = [s.id for s in speakers]
+        default_speaker = speakers[0].id if speakers else "osim"
 
         def get_speaker_preview(spk_id: str) -> Tuple[Optional[str], str]:
-            if spk_id in speakers_dict:
-                spk_data = speakers_dict[spk_id]
-                audio_p = str(Path(self.sampler.speaker_yaml).parent / spk_data["audio-prompt"])
-                return audio_p, spk_data.get("text-prompt", "")
+            spk = Speakers.find(spk_id)
+            if spk:
+                return spk.wav, spk.txt
             return None, ""
 
-        default_preview_audio, default_preview_text = get_speaker_preview(default_speaker)
+        default_preview_audio, default_preview_text = get_speaker_preview(self.config.predefined_speaker)
 
         theme = gr.themes.Soft(
             primary_hue="blue",
@@ -320,14 +285,14 @@ class GradioPage:
                     gr.Markdown("### 1. Model & Voice")
                     checkpoint_dropdown = gr.Dropdown(
                         choices=checkpoints,
-                        value=default_checkpoint,
+                        value=self.config.checkpoint,
                         label="Model Checkpoint",
                         info="Select VALL-E Hebrew checkpoint (.pt)",
                     )
 
                     speaker_mode_radio = gr.Radio(
                         choices=["Predefined Speaker", "Custom Voice Clone"],
-                        value="Predefined Speaker",
+                        value=self.config.speaker_mode,
                         label="Speaker Mode",
                     )
 
@@ -335,7 +300,7 @@ class GradioPage:
                     with gr.Group(visible=True) as predefined_group:
                         predefined_speaker = gr.Dropdown(
                             choices=speaker_names,
-                            value=default_speaker,
+                            value=self.config.predefined_speaker,
                             label="Predefined Speaker",
                             info="Select a speaker from speakers/speakers.yaml",
                         )
@@ -374,7 +339,7 @@ class GradioPage:
                     gr.Markdown("### 2. Hebrew Text")
                     text_input = gr.Textbox(
                         label="Text to Synthesize",
-                        value=self.DEFAULT_TEXT,
+                        value=self.config.text,
                         lines=5,
                         placeholder="הזן טקסט בעברית לסינתזה...",
                     )
@@ -406,19 +371,19 @@ class GradioPage:
                         pause_slider = gr.Slider(
                             minimum=0.0,
                             maximum=1.5,
-                            value=0.3,
+                            value=self.config.pause_duration,
                             step=0.05,
                             label="Inter-sentence Pause (seconds)",
                             info="Silence duration inserted between lines.",
                         )
                         nikud_checkbox = gr.Checkbox(
                             label="Phonetic Nikud / Ktiv-Male Disambiguation",
-                            value=True,
+                            value=self.config.nikud_converter,
                             info="Use phonikud to phonetically convert vocalized words to Ktiv-Male.",
                         )
                         mbd_checkbox = gr.Checkbox(
                             label="Multi-Band Diffusion (MBD) Vocoder",
-                            value=False,
+                            value=self.config.mbd,
                             info="Enable MBD diffusion vocoder (if installed) instead of EnCodec decode.",
                         )
 
@@ -428,7 +393,7 @@ class GradioPage:
                             temp_slider = gr.Slider(
                                 minimum=0.1,
                                 maximum=2.0,
-                                value=1.0,
+                                value=self.config.temperature,
                                 step=0.05,
                                 label="Temperature",
                                 info="Higher values = more creative/variable, lower = more deterministic.",
@@ -436,14 +401,14 @@ class GradioPage:
                             topk_slider = gr.Slider(
                                 minimum=1,
                                 maximum=100,
-                                value=50,
+                                value=self.config.top_k,
                                 step=1,
                                 label="Top-K",
                                 info="Top-K sampling parameter.",
                             )
                         with gr.Row():
-                            seed_number = gr.Number(label="Seed", value=420, precision=0)
-                            randomize_seed = gr.Checkbox(label="Randomize Seed", value=True)
+                            seed_number = gr.Number(label="Seed", value=self.config.seed_number, precision=0)
+                            randomize_seed = gr.Checkbox(label="Randomize Seed", value=self.config.randomize_seed)
 
             # --- Interactive Callbacks ---
 
@@ -487,13 +452,13 @@ class GradioPage:
             )
 
             # Populate text input and preview Ktiv-Male from uploaded text file
-            def on_text_file_upload(file: Optional[Any], enabled: bool) -> Tuple[Union[str, Dict[str, Any]], str]:
+            def on_text_file_upload(file: Optional[Any], enabled: Union[NikudMode, int, bool]) -> Tuple[Union[str, Dict[str, Any]], str]:
                 if file is not None:
                     try:
                         filepath = file.name if hasattr(file, "name") else str(file)
                         with open(filepath, "r", encoding="utf-8") as f:
                             content = f.read().strip()
-                            km = convert_nikud_text(content) if (enabled and has_nikud(content)) else ""
+                            km = convert_nikud_text(content) if (NikudMode(int(enabled)) == NikudMode.Enabled and has_nikud(content)) else ""
                             return content, km
                     except Exception as e:
                         return f"Error reading file: {e}", ""
@@ -506,8 +471,8 @@ class GradioPage:
             )
 
             # Preview Ktiv-Male when text editing finishes or nikud toggle changes
-            def on_text_or_nikud_change(text_val: str, enabled: bool) -> str:
-                if enabled and text_val and has_nikud(text_val):
+            def on_text_or_nikud_change(text_val: str, enabled: Union[NikudMode, int, bool]) -> str:
+                if NikudMode(int(enabled)) == NikudMode.Enabled and text_val and has_nikud(text_val):
                     return convert_nikud_text(text_val)
                 return ""
 
@@ -523,28 +488,7 @@ class GradioPage:
                 outputs=[ktiv_male_display],
             )
 
-            # Generate Audio
-            generate_button.click(
-                fn=self.generate_audio,
-                inputs=[
-                    checkpoint_dropdown,
-                    speaker_mode_radio,
-                    predefined_speaker,
-                    clone_audio,
-                    clone_text,
-                    text_input,
-                    pause_slider,
-                    temp_slider,
-                    topk_slider,
-                    mbd_checkbox,
-                    seed_number,
-                    randomize_seed,
-                    nikud_checkbox,
-                ],
-                outputs=[output_audio, seed_number, ktiv_male_display],
-            )
-
-            # Settings Import & Export
+            # Stateful Components (Order matches get_ui_values_from_config() / update_config_from_ui())
             stateful_components = [
                 checkpoint_dropdown,
                 speaker_mode_radio,
@@ -561,6 +505,18 @@ class GradioPage:
                 nikud_checkbox,
             ]
 
+            # Generate Audio (Accepts only Config instance)
+            def on_ui_generate(*args: Any, progress: gr.Progress = gr.Progress(track_tqdm=True)) -> Tuple[Tuple[int, np.ndarray], int, str]:
+                cfg = self.update_config_from_ui(*args)
+                return self.generate_audio(cfg, progress=progress)
+
+            generate_button.click(
+                fn=on_ui_generate,
+                inputs=stateful_components,
+                outputs=[output_audio, seed_number, ktiv_male_display],
+            )
+
+            # Settings Import & Export
             export_button.click(
                 fn=lambda *args: gr.update(value=self.export_settings(*args), visible=True),
                 inputs=stateful_components,
@@ -575,22 +531,10 @@ class GradioPage:
 
             # Restore Defaults Callback
             def reset_to_defaults():
-                defaults = self.get_default_settings()
-                aud, txt = get_speaker_preview(defaults["predefined_speaker"])
+                self.config.reset()
+                aud, txt = get_speaker_preview(self.config.predefined_speaker)
                 return (
-                    defaults["checkpoint"],
-                    defaults["speaker_mode"],
-                    defaults["predefined_speaker"],
-                    defaults["clone_audio"],
-                    defaults["clone_text"],
-                    defaults["text"],
-                    defaults["pause_duration"],
-                    defaults["temperature"],
-                    defaults["top_k"],
-                    defaults["mbd"],
-                    defaults["seed_number"],
-                    defaults["randomize_seed"],
-                    defaults["nikud_converter"],
+                    *self.get_ui_values_from_config(),
                     aud,
                     txt,
                     gr.update(visible=True),

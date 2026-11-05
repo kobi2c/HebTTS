@@ -14,6 +14,15 @@ import torchaudio
 from tqdm import tqdm
 
 import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
+from config import (
+    Config,
+    MbdMode,
+    RandomMode,
+    NikudMode,
+    Speakers,
+    audio_to_base64,
+    base64_to_audio,
+)
 from GradioPage import GradioPage
 from sample import Sampler
 from valle.data import AudioTokenizer, tokenize_audio
@@ -119,7 +128,6 @@ class VoiceMaker:
     def __init__(self, page: Optional[GradioPage] = None, sampler: Optional[Sampler] = None) -> None:
         self.page: GradioPage = page or GradioPage()
         self.sampler: Sampler = sampler or self.page.sampler
-        self.speakers_dict: Dict[str, Any] = self.sampler.get_speakers_dict()
 
         # Cache reference audio embeddings per prompt
         self._cached_prompt_audio: Optional[str] = None
@@ -136,9 +144,9 @@ class VoiceMaker:
         out_p.mkdir(parents=True, exist_ok=True)
         return out_p
 
-    def load_base_config(self, base_config_path: Optional[str]) -> Dict[str, Any]:
+    def load_base_config(self, base_config_path: Optional[str]) -> Config:
         """Loads baseline settings from a JSON file (exported from GradioPage) or default settings."""
-        defaults = self.page.get_default_settings()
+        defaults = Config().reset()
         if not base_config_path:
             return defaults
 
@@ -148,12 +156,7 @@ class VoiceMaker:
             return defaults
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            for k in GradioPage.SETTINGS_KEYS:
-                if k in loaded:
-                    defaults[k] = loaded[k]
-            return defaults
+            return Config.loadJson(path)
         except Exception as e:
             print(f"Warning: Could not read base config '{base_config_path}': {e}. Using defaults.")
             return defaults
@@ -171,16 +174,16 @@ class VoiceMaker:
                 return f.readlines()
 
     def parse_mki(
-        self, lines: List[str], base_config: Dict[str, Any]
-    ) -> List[Tuple[Dict[str, Any], str]]:
+        self, lines: List[str], base_config: Config
+    ) -> List[Tuple[Config, str]]:
         """
         Parses .mki lines grouping text into blocks controlled by dynamic settings directives.
         - Lines starting with '[' are comments.
         - Lines starting with '@' update active settings incrementally.
         - Lines starting with '!' reset to base_config and apply specified updates.
         """
-        blocks: List[Tuple[Dict[str, Any], str]] = []
-        current_settings = base_config.copy()
+        blocks: List[Tuple[Config, str]] = []
+        current_config = Config.from_dict(base_config.to_dict())
         current_block_lines: List[str] = []
 
         for line_idx, raw_line in enumerate(lines, start=1):
@@ -192,23 +195,16 @@ class VoiceMaker:
 
             if line.startswith("@") or line.startswith("!"):
                 if current_block_lines:
-                    blocks.append((current_settings.copy(), "\n".join(current_block_lines)))
+                    blocks.append((Config.from_dict(current_config.to_dict()), "\n".join(current_block_lines)))
                     current_block_lines = []
 
                 json_str = line[1:].strip()
                 try:
                     new_settings = json.loads(json_str)
                     if line.startswith("!"):
-                        current_settings = base_config.copy()
+                        current_config = Config.from_dict(base_config.to_dict())
 
-                    valid_updates = {
-                        k: v for k, v in new_settings.items() if k in GradioPage.SETTINGS_KEYS
-                    }
-                    unknown = set(new_settings.keys()) - set(GradioPage.SETTINGS_KEYS)
-                    if unknown:
-                        print(f"Warning [line {line_idx}]: Ignored unknown settings keys: {unknown}")
-
-                    current_settings.update(valid_updates)
+                    current_config.from_dict(new_settings)
                 except json.JSONDecodeError as e:
                     print(f"Warning [line {line_idx}]: Failed to parse JSON config on line: {line}\nError: {e}")
                 continue
@@ -216,52 +212,51 @@ class VoiceMaker:
             current_block_lines.append(line)
 
         if current_block_lines:
-            blocks.append((current_settings.copy(), "\n".join(current_block_lines)))
+            blocks.append((Config.from_dict(current_config.to_dict()), "\n".join(current_block_lines)))
 
         return blocks
 
-    def resolve_speaker_prompt(self, settings: Dict[str, Any]) -> Tuple[str, str]:
-        """Resolves prompt audio path and reference transcript from settings."""
-        speaker_mode = settings.get("speaker_mode", "Predefined Speaker")
+    def resolve_speaker_prompt(self, config: Config) -> Tuple[str, str]:
+        """Resolves prompt audio path and reference transcript from config."""
+        speaker_mode = config.speaker_mode
 
         if speaker_mode == "Predefined Speaker":
-            spk_id = settings.get("predefined_speaker", "osim")
-            if spk_id not in self.speakers_dict:
-                keys = list(self.speakers_dict.keys())
-                spk_id = keys[0] if keys else "osim"
-            spk_data = self.speakers_dict[spk_id]
-            prompt_audio = str(Path(self.sampler.speaker_yaml).parent / spk_data["audio-prompt"])
-            prompt_text = spk_data.get("text-prompt", "")
-            return prompt_audio, prompt_text
+            spk = Speakers.find(config.predefined_speaker)
+            if not spk:
+                speakers = Speakers.list()
+                spk = speakers[0] if speakers else None
+            if not spk:
+                raise ValueError("No predefined speakers available.")
+            return spk.wav, spk.txt
 
         # Custom Voice Clone
-        clone_audio = settings.get("clone_audio")
-        clone_text = settings.get("clone_text", "")
+        clone_audio = config.clone_audio
+        clone_text = config.clone_text
 
         if isinstance(clone_audio, dict):
             # Self-contained Base64 encoded audio
-            decoded_path = self.page.base64_to_audio(clone_audio)
+            decoded_path = base64_to_audio(clone_audio)
             if not decoded_path:
                 raise ValueError("Failed to decode base64 clone_audio.")
             prompt_audio = decoded_path
         elif isinstance(clone_audio, str) and os.path.exists(clone_audio):
             prompt_audio = clone_audio
         else:
-            raise ValueError(f"Invalid clone_audio provided in settings: {clone_audio}")
+            raise ValueError(f"Invalid clone_audio provided in config: {clone_audio}")
 
         return prompt_audio, str(clone_text)
 
     def synthesize_chunk(
         self,
         chunk_text: str,
-        settings: Dict[str, Any],
+        config: Config,
         model: torch.nn.Module,
         audio_tokenizer: AudioTokenizer,
         text_collater: Any,
         alef_bert_tokenizer: AlefBERTRootTokenizer,
     ) -> np.ndarray:
         """Synthesizes a single chunk using cached model and prompt representations."""
-        prompt_audio, prompt_text = self.resolve_speaker_prompt(settings)
+        prompt_audio, prompt_text = self.resolve_speaker_prompt(config)
 
         # Update cached prompt representations if speaker or audio changed
         if self._cached_prompt_audio != prompt_audio or self._cached_audio_prompts is None:
@@ -271,16 +266,16 @@ class VoiceMaker:
             self._cached_prompt_text = prompt_text
 
         # Randomize seed if enabled
-        if settings.get("randomize_seed", True):
+        if config.randomize_seed == RandomMode.Enabled:
             seed = random.randint(0, 2**31 - 1)
         else:
-            seed = int(settings.get("seed_number", 420))
+            seed = int(config.seed_number)
         torch.manual_seed(seed)
 
-        top_k = int(settings.get("top_k", 50))
-        temperature = float(settings.get("temperature", 1.0))
-        mbd = bool(settings.get("mbd", False))
-        nikud_converter = bool(settings.get("nikud_converter", True))
+        top_k = int(config.top_k)
+        temperature = float(config.temperature)
+        mbd = bool(config.mbd)
+        nikud_converter = bool(config.nikud_converter)
 
         seg = self.sampler.synthesize_line(
             text=chunk_text,
@@ -331,11 +326,11 @@ class VoiceMaker:
             sys.exit(0)
 
         # 2. Deconstruct into manageable text chunks
-        all_chunks: List[Tuple[Dict[str, Any], str]] = []
-        for block_settings, block_text in blocks:
+        all_chunks: List[Tuple[Config, str]] = []
+        for block_config, block_text in blocks:
             parts = split_text(block_text, max_len=args.max_len)
             for part in parts:
-                all_chunks.append((block_settings, part))
+                all_chunks.append((block_config, part))
 
         print(f"Found {len(blocks)} configuration blocks -> {len(all_chunks)} text chunks to synthesize.")
 
@@ -345,9 +340,9 @@ class VoiceMaker:
         sample_rate = 24000
 
         # 3. Generate audio chunk by chunk
-        for chunk_idx, (settings, chunk_text) in enumerate(tqdm(all_chunks, desc="Generating Audio"), start=1):
-            checkpoint = settings.get("checkpoint", "checkpoint.pt")
-            mbd = bool(settings.get("mbd", False))
+        for chunk_idx, (chunk_config, chunk_text) in enumerate(tqdm(all_chunks, desc="Generating Audio"), start=1):
+            checkpoint = chunk_config.checkpoint
+            mbd = bool(chunk_config.mbd)
 
             # Ensure model and tokenizers are loaded in memory
             model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.page.load_model_if_needed(
@@ -357,7 +352,7 @@ class VoiceMaker:
             # Synthesize chunk
             audio_np = self.synthesize_chunk(
                 chunk_text=chunk_text,
-                settings=settings,
+                config=chunk_config,
                 model=model,
                 audio_tokenizer=audio_tokenizer,
                 text_collater=text_collater,
@@ -381,7 +376,7 @@ class VoiceMaker:
             current_time_sec = end_time
 
             # Inter-sentence pause
-            pause_sec = float(settings.get("pause_duration", 0.3))
+            pause_sec = float(chunk_config.pause_duration)
             if chunk_idx < len(all_chunks) and pause_sec > 0:
                 silence_len = int(sample_rate * pause_sec)
                 silence = np.zeros(silence_len, dtype=audio_np.dtype)
