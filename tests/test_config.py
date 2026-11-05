@@ -3,7 +3,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Ensure project root is in sys.path
 root_dir = Path(__file__).resolve().parent.parent
@@ -38,11 +38,9 @@ from config import (
     audio_to_base64,
     base64_to_audio,
     Speaker,
-    SpeakerManager,
-    Speakers,
+    SpeakerData,
     Checkpoint,
-    CheckpointManager,
-    Checkpoints,
+    CheckpointData,
 )
 
 
@@ -243,12 +241,12 @@ def test_gradio_page_config_helpers():
     print("[PASS] GradioPage config integration verified.")
 
 
-def test_speaker_manager():
-    # Speakers manager
-    Speakers.clear()
-    assert Speakers._list is None
+def test_speaker_data():
+    mgr = SpeakerData()
+    assert mgr._list is None
+    assert mgr.data_path == "speakers/speakers.yaml"
 
-    speakers = Speakers.list()
+    speakers = mgr.list()
     assert isinstance(speakers, list) and len(speakers) >= 3
     assert all(isinstance(s, Speaker) for s in speakers)
 
@@ -260,79 +258,110 @@ def test_speaker_manager():
     assert len(s1.txt) > 0
 
     # find by 1-based int, string digit, and id
-    found_by_int = Speakers.find(1)
-    found_by_str_digit = Speakers.find("1")
-    found_by_id = Speakers.find("osim")
-    found_by_id_upper = Speakers.find("OSIM")
+    found_by_int = mgr.find(1)
+    found_by_str_digit = mgr.find("1")
+    found_by_id = mgr.find("osim")
+    found_by_id_upper = mgr.find("OSIM")
     assert found_by_int is s1
     assert found_by_str_digit is s1
     assert found_by_id is s1
     assert found_by_id_upper is s1
 
     # find second speaker: geek
-    s2 = Speakers.find(2)
+    s2 = mgr.find(2)
     assert s2 is not None and s2.id == "geek"
     assert s2.wav_base == "geek.wav"
 
     # Negative lookup cases
-    assert Speakers.find(999) is None
-    assert Speakers.find("0") is None
-    assert Speakers.find(-1) is None
-    assert Speakers.find("unknown_speaker_xyz") is None
+    assert mgr.find(999) is None
+    assert mgr.find("0") is None
+    assert mgr.find(-1) is None
+    assert mgr.find("unknown_speaker_xyz") is None
 
-    # Custom SpeakerManager instance
-    custom_mgr = SpeakerManager()
-    assert custom_mgr._list is None
-    custom_list = custom_mgr.list()
-    assert len(custom_list) == len(speakers)
-    custom_mgr.clear()
-    assert custom_mgr._list is None
+    mgr.clear()
+    assert mgr._list is None
 
-    print("[PASS] SpeakerManager (load, list, find, clear) verified.")
+    print("[PASS] SpeakerData (load, list, find, clear) verified.")
 
 
-def test_checkpoint_manager():
-    # Checkpoints manager
-    Checkpoints.clear()
-    assert Checkpoints._list is None
+def test_checkpoint_data():
+    mgr = CheckpointData()
+    assert mgr._list is None
+    assert mgr.data_path == "checkpoints/checkpoints.yaml"
 
-    checkpoints = Checkpoints.list()
+    checkpoints = mgr.list()
     assert isinstance(checkpoints, list) and len(checkpoints) >= 1
     assert all(isinstance(c, Checkpoint) for c in checkpoints)
 
     # First checkpoint: checkpoint.pt
     c1 = checkpoints[0]
     assert c1.id == "checkpoint.pt"
-    assert "checkpoint.pt" in c1.path
+    assert c1.path == "checkpoint.pt"
+    assert c1.full_path == "checkpoints/checkpoint.pt"
     assert c1.gdrive_id == "11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv"
     assert len(c1.description) > 0
     assert isinstance(c1.exists, bool)
 
     # find by 1-based int, string digit, and id/path
-    found_by_int = Checkpoints.find(1)
-    found_by_str_digit = Checkpoints.find("1")
-    found_by_id = Checkpoints.find("checkpoint.pt")
-    found_by_id_upper = Checkpoints.find("CHECKPOINT.PT")
+    found_by_int = mgr.find(1)
+    found_by_str_digit = mgr.find("1")
+    found_by_id = mgr.find("checkpoint.pt")
+    found_by_id_upper = mgr.find("CHECKPOINT.PT")
+    found_by_full_path = mgr.find("checkpoints/checkpoint.pt")
     assert found_by_int is c1
     assert found_by_str_digit is c1
     assert found_by_id is c1
     assert found_by_id_upper is c1
+    assert found_by_full_path is c1
+
+    # Test auto-discovery of extra *.pt files in base_dir
+    dummy_pt = Path("checkpoints/dummy_extra_test.pt")
+    try:
+        dummy_pt.touch()
+        mgr.clear()
+        discovered = mgr.find("dummy_extra_test.pt")
+        assert discovered is not None
+        assert discovered.id == "dummy_extra_test.pt"
+        assert discovered.path == "dummy_extra_test.pt"
+        assert discovered.full_path == "checkpoints/dummy_extra_test.pt"
+    finally:
+        if dummy_pt.exists():
+            dummy_pt.unlink()
+        mgr.clear()
+
+    # Test download via mocked gdown when file is missing
+    mock_gdown = MagicMock()
+    missing_cp = Checkpoint(
+        id="mock_remote.pt",
+        path="mock_remote.pt",
+        gdrive_id="mock_gdrive_123",
+        base_dir="checkpoints",
+    )
+    with patch.dict("sys.modules", {"gdown": mock_gdown}):
+        # Mock gdown creating the file
+        def fake_download(id, output, quiet, resume=False):
+            Path(output).touch()
+
+        mock_gdown.download = MagicMock(side_effect=fake_download)
+        out_path = missing_cp.download(quiet=True)
+        assert Path(out_path).exists()
+        assert Path(out_path).name == "mock_remote.pt"
+        mock_gdown.download.assert_called_once_with(
+            id="mock_gdrive_123", output=str(Path(missing_cp.full_path).resolve()), quiet=True, resume=True
+        )
+        if Path(out_path).exists():
+            Path(out_path).unlink()
 
     # Negative lookup cases
-    assert Checkpoints.find(999) is None
-    assert Checkpoints.find("0") is None
-    assert Checkpoints.find(-1) is None
-    assert Checkpoints.find("nonexistent_checkpoint_file.pt") is None
+    assert mgr.find(999) is None
+    assert mgr.find("0") is None
+    assert mgr.find(-1) is None
+    assert mgr.find("nonexistent_checkpoint_file.pt") is None
 
-    # Custom CheckpointManager instance
-    custom_mgr = CheckpointManager()
-    assert custom_mgr._list is None
-    custom_list = custom_mgr.list()
-    assert len(custom_list) == len(checkpoints)
-    custom_mgr.clear()
-    assert custom_mgr._list is None
+    mgr.clear()
+    assert mgr._list is None
 
-    print("[PASS] CheckpointManager (load, list, find, clear) verified.")
+    print("[PASS] CheckpointData (load, list, find, clear) verified.")
 
 
 if __name__ == "__main__":
@@ -343,7 +372,6 @@ if __name__ == "__main__":
     test_mki_parsing_with_config()
     test_generate_audio_strict_config()
     test_gradio_page_config_helpers()
-    test_speaker_manager()
-    test_checkpoint_manager()
+    test_speaker_data()
+    test_checkpoint_data()
     print("\n🎉 ALL TESTS IN tests/test_config.py PASSED SUCCESSFULLY!")
-

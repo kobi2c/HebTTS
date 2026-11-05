@@ -7,8 +7,8 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
-from .Speaker import Speaker, SpeakerManager, Speakers
-from .Checkpoint import Checkpoint, CheckpointManager, Checkpoints
+from .Speaker import Speaker, SpeakerData
+from .Checkpoint import Checkpoint, CheckpointData
 
 
 class MbdMode(IntEnum):
@@ -100,9 +100,9 @@ class Config:
 
     def reset(self) -> "Config":
         """Resets all configuration fields in-place to their default values."""
-        checkpoints = [c.path for c in Checkpoints.list()]
+        checkpoints = [c.path for c in CheckpointData().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
-        speakers = Speakers.list()
+        speakers = SpeakerData().list()
         default_speaker = speakers[0].id if speakers else "osim"
 
         self.checkpoint = default_checkpoint

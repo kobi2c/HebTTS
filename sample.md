@@ -117,3 +117,11 @@ sampler.run([
     "--output", "output.wav"
 ])
 ```
+
+## Samples
+
+```
+docker run --rm -v %CD%:/app hebtts:latest python sample.py --speaker-list
+docker run --rm -v %CD%:/app hebtts:latest python sample.py --checkpoint-list
+docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py
+```

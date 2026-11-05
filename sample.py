@@ -13,27 +13,23 @@ from valle.models import get_model
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from utils import AttributeDict
 from nikud_converter import convert_nikud_text
-from config import Speakers, Checkpoints
+from config import SpeakerData, CheckpointData
 
 
 class Sampler:
-    DEFAULT_SPEAKER_YAML = "speakers/speakers.yaml"
     DEFAULT_TOKENS_FILE  = "tokenizer/unique_words_tokens_all.k2symbols"
     DEFAULT_VOCAB_FILE   = "tokenizer/vocab.txt"
 
-    def __init__(
-        self,
-        speaker_yaml=DEFAULT_SPEAKER_YAML,
-        tokens_file=DEFAULT_TOKENS_FILE,
-        vocab_file=DEFAULT_VOCAB_FILE,
-    ):
-        self.speaker_yaml = speaker_yaml
+    def __init__( self, tokens_file=DEFAULT_TOKENS_FILE, vocab_file=DEFAULT_VOCAB_FILE ):
+        self.speakers    = SpeakerData()
+        self.checkpoints = CheckpointData()
         self.tokens_file = tokens_file
-        self.vocab_file = vocab_file
+        self.vocab_file  = vocab_file
 
-    def print_speaker_list(self, speakers=None):
-        if speakers is None:
-            speakers = Speakers.list()
+
+
+    def print_speakers(self):
+        speakers = self.speakers.list()
         print("\nAvailable speakers:")
         print("-" * 80)
         print(f"{'Number':<8} {'Speaker ID':<15} {'Audio Prompt':<15} {'Text Prompt'}")
@@ -46,8 +42,8 @@ class Sampler:
             print(f"{idx:<8} {spk.id:<15} {audio_prompt:<15} {prompt_text}")
         print("-" * 80 + "\n")
 
-    def print_checkpoint_list(self):
-        checkpoints = Checkpoints.list()
+    def print_checkpoints(self):
+        checkpoints = self.checkpoints.list()
         print("\nAvailable checkpoints:")
         print("-" * 85)
         print(f"{'Number':<8} {'Checkpoint ID':<20} {'Status':<12} {'Description'}")
@@ -58,22 +54,24 @@ class Sampler:
         print("-" * 85 + "\n")
 
     def resolve_checkpoint(self, checkpoint_arg):
-        cp = Checkpoints.find(checkpoint_arg)
+        cp = self.checkpoints.find(checkpoint_arg)
         if cp:
-            return cp.path
+            if not cp.exists and cp.gdrive_id:
+                cp.download()
+            return cp.full_path
         if os.path.exists(checkpoint_arg):
             return checkpoint_arg
         print(f"Error: Predefined checkpoint '{checkpoint_arg}' not found.")
-        self.print_checkpoint_list()
+        self.print_checkpoints()
         sys.exit(1)
 
     def resolve_speaker(self, speaker_arg, speakers=None):
-        spk = Speakers.find(speaker_arg)
+        spk = self.speakers.find(speaker_arg)
         if spk:
             return spk.id, {"text-prompt": spk.txt, "audio-prompt": spk.wav}
 
         print(f"Error: Speaker '{speaker_arg}' not found.")
-        self.print_speaker_list()
+        self.print_speakers(speakers)
         sys.exit(1)
 
     def load_model(self, checkpoint, device):
@@ -293,14 +291,14 @@ class Sampler:
         elif isinstance(args, list):
             args = self.create_parser().parse_args(args)
 
-        speakers = Speakers.list()
+        speakers = self.speakers.list()
 
         if args.speaker_list:
-            self.print_speaker_list(speakers)
+            self.print_speakers()
             return
 
         if args.checkpoint_list:
-            self.print_checkpoint_list()
+            self.print_checkpoints()
             return
 
         checkpoint_path = self.resolve_checkpoint(args.checkpoint)
@@ -372,7 +370,7 @@ class Sampler:
                     print("Please specify reference text with --clone-txt <file.txt>.")
                     sys.exit(1)
         else:
-            prompt_audio = str(Path(self.speaker_yaml).parent / speaker_data["audio-prompt"])
+            prompt_audio = speaker_data["audio-prompt"]
             prompt_text = speaker_data["text-prompt"]
 
         # Device detection

@@ -20,8 +20,8 @@ from config import (
     MbdMode,
     RandomMode,
     NikudMode,
-    Speakers,
-    Checkpoints,
+    SpeakerData,
+    CheckpointData,
 )
 from sample import Sampler
 from valle.data import AudioTokenizer, tokenize_audio
@@ -98,8 +98,17 @@ class GradioPage:
         self, checkpoint_path: str, mbd: Union[MbdMode, int, bool] = MbdMode.Disabled
     ) -> Tuple[torch.nn.Module, AudioTokenizer, Any, AlefBERTRootTokenizer]:
         """Loads and caches the VALL-E model and tokenizers."""
-        if not os.path.exists(checkpoint_path):
-            raise gr.Error(f"Checkpoint '{checkpoint_path}' not found on disk.")
+        cp = CheckpointData().find(checkpoint_path)
+        actual_path = cp.full_path if cp else checkpoint_path
+
+        if not os.path.exists(actual_path):
+            if cp and not cp.exists and cp.gdrive_id:
+                try:
+                    actual_path = cp.download()
+                except Exception as e:
+                    raise gr.Error(f"Failed to download checkpoint '{checkpoint_path}': {e}")
+            if not os.path.exists(actual_path):
+                raise gr.Error(f"Checkpoint '{checkpoint_path}' not found on disk.")
 
         mbd_mode = MbdMode(int(mbd))
 
@@ -110,7 +119,7 @@ class GradioPage:
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-            self.model, _ = self.sampler.load_model(checkpoint_path, self.device)
+            self.model, _ = self.sampler.load_model(actual_path, self.device)
             self.checkpoint = checkpoint_path
             print("Model loaded successfully.")
 
@@ -167,7 +176,7 @@ class GradioPage:
 
         # 1. Resolve speaker prompt audio and text
         if cfg.speaker_mode == "Predefined Speaker":
-            spk = Speakers.find(cfg.predefined_speaker)
+            spk = SpeakerData().find(cfg.predefined_speaker)
             if not spk:
                 raise gr.Error(f"Predefined speaker '{cfg.predefined_speaker}' not found.")
             prompt_audio = spk.wav
@@ -244,15 +253,15 @@ class GradioPage:
         return (24000, audio_np), seed, ktiv_male_text
 
     def build_interface(self) -> gr.Blocks:
-        checkpoints = [c.path for c in Checkpoints.list()]
+        checkpoints = [c.path for c in CheckpointData().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
 
-        speakers = Speakers.list()
+        speakers = SpeakerData().list()
         speaker_names = [s.id for s in speakers]
         default_speaker = speakers[0].id if speakers else "osim"
 
         def get_speaker_preview(spk_id: str) -> Tuple[Optional[str], str]:
-            spk = Speakers.find(spk_id)
+            spk = SpeakerData().find(spk_id)
             if spk:
                 return spk.wav, spk.txt
             return None, ""

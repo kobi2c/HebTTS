@@ -13,16 +13,18 @@ class Speaker:
     wav_base: str
 
 
-class SpeakerManager:
+class SpeakerData:
     """Manages loading, caching, and querying of predefined speakers."""
 
-    def __init__(self, default_yaml: Union[str, Path] = "speakers/speakers.yaml") -> None:
-        self.default_yaml: str = str(default_yaml)
+    DEFAULT_DATA_PATH: str = "speakers/speakers.yaml"
+
+    def __init__(self, data_path: Union[str, Path] = DEFAULT_DATA_PATH) -> None:
+        self.data_path: str = str(data_path)
         self._list: Optional[List[Speaker]] = None
 
-    def load(self, yaml_path: Optional[Union[str, Path]] = None) -> List[Speaker]:
+    def load(self, data_path: Optional[Union[str, Path]] = None) -> List[Speaker]:
         """Loads speakers from a YAML file, builds Speaker instances, and caches them."""
-        path = Path(yaml_path or self.default_yaml).resolve()
+        path = Path(data_path or self.data_path).resolve()
         if not path.exists():
             self._list = []
             return self._list
@@ -102,7 +104,4 @@ class SpeakerManager:
         """Clears the cached speakers list."""
         self._list = None
 
-
-# Singleton instance for global access
-Speakers: SpeakerManager = SpeakerManager()
 

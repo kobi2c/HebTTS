@@ -19,7 +19,7 @@ from config import (
     MbdMode,
     RandomMode,
     NikudMode,
-    Speakers,
+    SpeakerData,
     audio_to_base64,
     base64_to_audio,
 )
@@ -221,9 +221,10 @@ class VoiceMaker:
         speaker_mode = config.speaker_mode
 
         if speaker_mode == "Predefined Speaker":
-            spk = Speakers.find(config.predefined_speaker)
+            spk_data = SpeakerData()
+            spk = spk_data.find(config.predefined_speaker)
             if not spk:
-                speakers = Speakers.list()
+                speakers = spk_data.list()
                 spk = speakers[0] if speakers else None
             if not spk:
                 raise ValueError("No predefined speakers available.")
