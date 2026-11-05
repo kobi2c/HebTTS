@@ -7,7 +7,7 @@ docker run --rm -v %CD%:/app hebtts:latest gdown 11NoOJzMLRX9q1C_Q4sX0w2b9miiDjG
 
 ### 2. Quick Sample Generator (`sample.py`)
 ```bash
-# Default run (shaul speaker, reads sample_he.txt, saves to sample.wav)
+# Default run (shaul speaker, reads sample.txt, saves to sample.wav)
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py
 
 # List available speakers
@@ -20,7 +20,7 @@ docker run --rm -v %CD%:/app hebtts:latest python sample.py --checkpoint-list
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --speaker geek --text "שָׁלוֹם עָלֵיכֶם" --output sample.wav
 
 # Synthesize from text file (defaults output to <filename>.wav)
-docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --input sample.txt
+docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --input samples/sample.txt
 ```
 
 ### 3. Advanced Inference (`infer.py`)
@@ -33,3 +33,13 @@ docker run --gpus all --rm -v %CD%:/app hebtts:latest python infer.py --checkpoi
 docker run --gpus all --rm -p 7860:7860 -v %CD%:/app hebtts:latest python GradioPage.py
 ```
 Open your browser at `http://localhost:7860`.
+
+### 5. Batch Voice & Subtitle Generator (`make_voice.py`)
+Synthesize speech and generate synchronized `.srt` subtitles from `.mki` script files containing dynamic voice directives (`@` for updates, `!` for reset):
+```bash
+docker run --gpus all --rm -v %CD%:/app hebtts:latest python make_voice.py -i samples/sample.mki
+```
+Outputs are automatically written to `<input_dir>/out/`:
+- `{basename}_{idx:03d}.wav` & `{basename}_{idx:03d}.txt`: individual sentence chunks.
+- `{basename}.wav`: full merged audio with inter-sentence pauses.
+- `{basename}.srt`: synchronized subtitle file.

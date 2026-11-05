@@ -261,7 +261,6 @@ class Sampler:
         )
         parser.add_argument(
             "--input",
-            "--in-file",
             type=str,
             default=None,
             dest="input_file",
@@ -275,7 +274,6 @@ class Sampler:
         )
         parser.add_argument(
             "--clone-wav",
-            "--speaker-audio",
             type=str,
             default=None,
             dest="clone_wav",
@@ -283,7 +281,6 @@ class Sampler:
         )
         parser.add_argument(
             "--clone-txt",
-            "--speaker-text",
             type=str,
             default=None,
             dest="clone_txt",
@@ -340,31 +337,38 @@ class Sampler:
         speaker_id, speaker_data = self.resolve_speaker(args.speaker, speakers)
 
         # Resolve text input
+        lines = None
+
+        input_file_path = None
         if args.input_file is not None:
-            if not os.path.exists(args.input_file):
+            input_file_path = Path(args.input_file)
+            if not input_file_path.exists():
                 print(f"Error: Input file '{args.input_file}' not found.")
                 sys.exit(1)
-            with open(args.input_file, "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f.read().splitlines() if line.strip()]
         elif args.text is not None:
             lines = [args.text.strip()]
-        elif os.path.exists("sample_he.txt"):
-            with open("sample_he.txt", "r", encoding="utf-8") as f:
+        elif os.path.exists("samples/sample.txt"):
+            input_file_path = Path("samples/sample.txt")
+
+        if input_file_path is not None:
+            with open(input_file_path, "r", encoding="utf-8") as f:
                 lines = [line.strip() for line in f.read().splitlines() if line.strip()]
-        elif os.path.exists("sample.txt"):
-            with open("sample.txt", "r", encoding="utf-8") as f:
-                lines = [line.strip() for line in f.read().splitlines() if line.strip()]
-        else:
-            lines = ["שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית."]
 
         if not lines:
             lines = ["שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית."]
 
         # Resolve output path: if not explicitly specified, default to same directory and stem as input file
         if args.output is not None:
-            output_path = Path(args.output)
-        elif args.input_file is not None:
-            output_path = Path(args.input_file).with_suffix(".wav")
+            out_p = Path(args.output)
+            if out_p.is_dir() or str(args.output).endswith(("\\", "/")):
+                stem = input_file_path.stem if input_file_path is not None else "sample"
+                output_path = out_p / f"{stem}.wav"
+            elif not out_p.suffix:
+                output_path = out_p.with_suffix(".wav")
+            else:
+                output_path = out_p
+        elif input_file_path is not None:
+            output_path = input_file_path.with_suffix(".wav")
         else:
             output_path = Path("sample.wav")
 

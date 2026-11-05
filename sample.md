@@ -20,7 +20,7 @@ docker run --rm -v %CD%:/app hebtts:latest python sample.py --checkpoint-list
 
 ### 2. Synthesize from Text File
 
-When using `--input` (or `--in-file`), the output audio file defaults automatically to the same directory and stem as the input file (e.g. `path/to/sample.txt` -> `path/to/sample.wav`):
+When using `--input`, the output audio file defaults automatically to the same directory and stem as the input file (e.g. `path/to/sample.txt` -> `path/to/sample.wav`):
 
 ```bash
 docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --input sample.txt
@@ -117,6 +117,3 @@ sampler.run([
     "--output", "output.wav"
 ])
 ```
-
-
-docker run --gpus all --rm -v %CD%:/app hebtts:latest python sample.py --clone-wav data/clone.wav --clone-txt data/clone.txt --input data/sample.txt
