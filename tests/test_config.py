@@ -297,7 +297,7 @@ def test_checkpoint_data():
     c1 = checkpoints[0]
     assert c1.id == "checkpoint.pt"
     assert c1.path == "checkpoint.pt"
-    assert c1.full_path == "checkpoints/checkpoint.pt"
+    assert c1.full_path == Path("checkpoints/checkpoint.pt")
     assert c1.gdrive_id == "11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv"
     assert len(c1.info) > 0
     assert isinstance(c1.exists, bool)
@@ -323,7 +323,7 @@ def test_checkpoint_data():
         assert discovered is not None
         assert discovered.id == "dummy_extra_test.pt"
         assert discovered.path == "dummy_extra_test.pt"
-        assert discovered.full_path == "checkpoints/dummy_extra_test.pt"
+        assert discovered.full_path == Path("checkpoints/dummy_extra_test.pt")
     finally:
         if dummy_pt.exists():
             dummy_pt.unlink()
@@ -344,8 +344,9 @@ def test_checkpoint_data():
 
         mock_gdown.download = MagicMock(side_effect=fake_download)
         out_path = missing_cp.download(quiet=True)
-        assert Path(out_path).exists()
-        assert Path(out_path).name == "mock_remote.pt"
+        assert isinstance(out_path, Path)
+        assert out_path.exists()
+        assert out_path.name == "mock_remote.pt"
         mock_gdown.download.assert_called_once_with(
             id="mock_gdrive_123", output=str(Path(missing_cp.full_path).resolve()), quiet=True, resume=True
         )

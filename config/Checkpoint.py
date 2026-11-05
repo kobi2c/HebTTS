@@ -15,22 +15,19 @@ class Checkpoint:
     base      : str = "checkpoints"
 
     @property
-    def full_path(self) -> str:
+    def full_path(self) -> Path:
         """Returns the complete filesystem path relative to the workspace root."""
-        if self.base and not Path(self.path).is_absolute():
-            norm_base = str(self.base).replace("\\", "/").rstrip("/")
-            norm_path = self.path.replace("\\", "/")
-            if norm_path == norm_base or norm_path.startswith(norm_base + "/"):
-                return norm_path
-            return str((Path(self.base) / self.path).as_posix())
-        return self.path
+		if self.base:
+            return Path(self.base) / self.path 
+		else: 
+     		retuen Path(self.path)
 
     @property
     def exists(self) -> bool:
         """Returns True if the checkpoint file exists on disk."""
         return os.path.exists(self.full_path)
 
-    def download(self, quiet: bool = False) -> str:
+    def download(self, quiet: bool = False) -> Path:
         """
         Downloads the checkpoint file from Google Drive if it does not exist on disk.
         Uses the gdown python package with fallback to gdown CLI.
@@ -41,7 +38,7 @@ class Checkpoint:
         if not self.gdrive_id:
             raise ValueError(f"Checkpoint '{self.id}' does not exist on disk and has no gdrive_id.")
 
-        out_path = Path(self.full_path).resolve()
+        out_path = self.full_path.resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -62,7 +59,7 @@ class Checkpoint:
         if not out_path.exists():
             raise FileNotFoundError(f"Download completed but '{out_path}' was not found on disk.")
 
-        return str(out_path)
+        return out_path
 
 
 class CheckpointData:
@@ -173,30 +170,21 @@ class CheckpointData:
         """
         checkpoints = self.list()
 
-        # Check for 1-based integer index or digit string
-        if isinstance(index_or_id, int):
-            idx = index_or_id
-            if 1 <= idx <= len(checkpoints):
-                return checkpoints[idx - 1]
-            return None
-
+        # Check for 1-based integer index or digit string within range
         str_val = str(index_or_id).strip()
         if str_val.isdigit():
             idx = int(str_val)
             if 1 <= idx <= len(checkpoints):
                 return checkpoints[idx - 1]
-            return None
 
-        # Lookup by ID or path (case-insensitive, normalized slashes)
-        target = str_val.replace("\\", "/").lower()
+        # Lookup by ID, path, or filename/stem (case-insensitive)
+        target = str_val.lower()
+        target_name = Path(str_val).name.lower()
         for cp in checkpoints:
-            norm_cp_path = cp.path.replace("\\", "/").lower()
-            norm_full_path = cp.full_path.replace("\\", "/").lower()
             if (
-                cp.id.lower() == target
-                or norm_cp_path == target
-                or norm_full_path == target
-                or Path(cp.path).name.lower() == target
+                cp.id.lower() in (target, target_name)
+                or Path(cp.path).stem.lower() in (target, target_name)
+                or cp.full_path.as_posix().lower() == target
             ):
                 return cp
 
