@@ -50,7 +50,7 @@ class Sampler:
         print("-" * 85)
         for idx, cp in enumerate(checkpoints, start=1):
             status = "Found" if cp.exists else "Missing"
-            print(f"{idx:<8} {cp.id:<20} {status:<12} {cp.description}")
+            print(f"{idx:<8} {cp.id:<20} {status:<12} {cp.info}")
         print("-" * 85 + "\n")
 
     def resolve_checkpoint(self, checkpoint_arg):

@@ -8,21 +8,21 @@ from typing import Any, Dict, List, Optional, Union
 @dataclass
 class Checkpoint:
     """Represents a neural model checkpoint file."""
-    id: str
-    path: str
-    description: str = ""
-    gdrive_id: Optional[str] = None
-    base_dir: str = "checkpoints"
+    id        : str
+    path      : str
+    info      : str = ""
+    gdrive_id : Optional[str] = None
+    base      : str = "checkpoints"
 
     @property
     def full_path(self) -> str:
         """Returns the complete filesystem path relative to the workspace root."""
-        if self.base_dir and not Path(self.path).is_absolute():
-            norm_base = str(self.base_dir).replace("\\", "/").rstrip("/")
+        if self.base and not Path(self.path).is_absolute():
+            norm_base = str(self.base).replace("\\", "/").rstrip("/")
             norm_path = self.path.replace("\\", "/")
             if norm_path == norm_base or norm_path.startswith(norm_base + "/"):
                 return norm_path
-            return str((Path(self.base_dir) / self.path).as_posix())
+            return str((Path(self.base) / self.path).as_posix())
         return self.path
 
     @property
@@ -131,9 +131,9 @@ class CheckpointData:
                 Checkpoint(
                     id=str(cp_id),
                     path=rel_path,
-                    description=description,
+                    info=description,
                     gdrive_id=str(gdrive_id) if gdrive_id else None,
-                    base_dir=norm_base_dir,
+                    base=norm_base_dir,
                 )
             )
             seen_ids.add(str(cp_id).lower())
@@ -150,8 +150,8 @@ class CheckpointData:
                         Checkpoint(
                             id=f_name,
                             path=rel_f,
-                            description=f"Local checkpoint ({f_name})",
-                            base_dir=norm_base_dir,
+                            info=f"Local checkpoint ({f_name})",
+                            base=norm_base_dir,
                         )
                     )
                     seen_ids.add(f_name.lower())

@@ -299,7 +299,7 @@ def test_checkpoint_data():
     assert c1.path == "checkpoint.pt"
     assert c1.full_path == "checkpoints/checkpoint.pt"
     assert c1.gdrive_id == "11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv"
-    assert len(c1.description) > 0
+    assert len(c1.info) > 0
     assert isinstance(c1.exists, bool)
 
     # find by 1-based int, string digit, and id/path
@@ -335,7 +335,7 @@ def test_checkpoint_data():
         id="mock_remote.pt",
         path="mock_remote.pt",
         gdrive_id="mock_gdrive_123",
-        base_dir="checkpoints",
+        base="checkpoints",
     )
     with patch.dict("sys.modules", {"gdown": mock_gdown}):
         # Mock gdown creating the file
