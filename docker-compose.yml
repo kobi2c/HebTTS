@@ -1,0 +1,19 @@
+services:
+  hebtts:
+    image: hebtts:latest
+    build: .
+    volumes:
+      - .:/app
+      - ./.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints
+    ports:
+      - "7860:7860"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: python sample.py
+    stdin_open: true
+    tty: true

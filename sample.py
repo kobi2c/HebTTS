@@ -94,7 +94,7 @@ class Sampler:
         if not checkpoint or not os.path.exists(checkpoint):
             print(f"Error: Checkpoint file '{checkpoint}' does not exist.")
             print("To download the official checkpoint, run:")
-            print("  docker run --rm -v %CD%:/app hebtts:latest gdown 11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv")
+            print("  docker-run gdown 11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv")
             sys.exit(1)
 
         checkpoint_data = torch.load(checkpoint, map_location=device, weights_only=False)

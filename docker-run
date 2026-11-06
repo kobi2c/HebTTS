@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p "${SCRIPT_DIR}/.cache/torch/hub/checkpoints"
+
+if [ $# -eq 0 ]; then
+    docker run --gpus all --rm -it \
+        -v "${SCRIPT_DIR}:/app" \
+        -v "${SCRIPT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
+        -p 7860:7860 \
+        hebtts:latest python sample.py
+else
+    docker run --gpus all --rm -it \
+        -v "${SCRIPT_DIR}:/app" \
+        -v "${SCRIPT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
+        -p 7860:7860 \
+        hebtts:latest "$@"
+fi
+
