@@ -21,7 +21,7 @@ from config import (
     RandomMode,
     NikudMode,
     SpeakerData,
-    CheckpointData,
+    CheckpointStore,
 )
 from sample import Sampler
 from valle.data import AudioTokenizer, tokenize_audio
@@ -98,7 +98,7 @@ class GradioPage:
         self, checkpoint_path: str, mbd: Union[MbdMode, int, bool] = MbdMode.Disabled
     ) -> Tuple[torch.nn.Module, AudioTokenizer, Any, AlefBERTRootTokenizer]:
         """Loads and caches the VALL-E model and tokenizers."""
-        cp = CheckpointData().find(checkpoint_path)
+        cp = CheckpointStore().find(checkpoint_path)
         actual_path = cp.full_path if cp else checkpoint_path
 
         if not os.path.exists(actual_path):
@@ -253,7 +253,7 @@ class GradioPage:
         return (24000, audio_np), seed, ktiv_male_text
 
     def build_interface(self) -> gr.Blocks:
-        checkpoints = [c.path for c in CheckpointData().list()]
+        checkpoints = [c.path for c in CheckpointStore().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
 
         speakers = SpeakerData().list()

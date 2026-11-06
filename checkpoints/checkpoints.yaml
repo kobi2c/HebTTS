@@ -1,7 +1,4 @@
-checkpoint.pt:
-  path: "checkpoint.pt"
-  description: "VALL-E Hebrew (AR 1.2M / NAR 200K steps on HebDB)"
+checkpoint_01:
+  path: "checkpoint_01.pt"
+  info: "VALL-E Hebrew (AR 1.2M / NAR 200K steps on HebDB)"
   gdrive_id: "11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv"
-
-
-

@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional, Union
 @dataclass
 class Checkpoint:
     """Represents a neural model checkpoint file."""
-    id        : str
-    path      : str
+    id        : str = ""
+    path      : str = ""
     info      : str = ""
     gdrive_id : Optional[str] = None
     base      : str = "checkpoints"
@@ -17,10 +17,13 @@ class Checkpoint:
     @property
     def full_path(self) -> Path:
         """Returns the complete filesystem path relative to the workspace root."""
-		if self.base:
-            return Path(self.base) / self.path 
-		else: 
-     		retuen Path(self.path)
+        p = Path(self.path)
+        if p.is_absolute():
+            return p
+        if self.base:
+            return Path(self.base) / p
+        else:
+            return p
 
     @property
     def exists(self) -> bool:
@@ -62,33 +65,58 @@ class Checkpoint:
         return out_path
 
 
-class CheckpointData:
-    """Manages discovery, caching, and querying of model checkpoints from checkpoints/checkpoints.yaml."""
+    def parse(self, data: dict, base: Union[Path, str], id: str) -> "Checkpoint":
+        """Updates checkpoint attributes from a dictionary."""
+        base_path = Path(base)
+        self.base = base_path.as_posix()
 
-    DEFAULT_DATA_PATH: str = "checkpoints/checkpoints.yaml"
+        if id is not None:
+            self.id = str(id)
+
+        path = data.get("path", self.path or self.id)
+        if path:
+            raw = Path(path)
+            try:
+                if raw.is_relative_to(base_path):
+                    self.path = raw.relative_to(base_path).as_posix()
+                elif raw.resolve().is_relative_to(base_path.resolve()):
+                    self.path = raw.resolve().relative_to(base_path.resolve()).as_posix()
+                else:
+                    self.path = raw.as_posix()
+            except Exception:
+                self.path = raw.as_posix()
+
+        info = data.get("info", data.get("description", self.info))
+        if info is not None:
+            self.info = str(info)
+
+        gid = data.get("gdrive_id", self.gdrive_id)
+        if gid is not None:
+            self.gdrive_id = str(gid)
+
+        return self
+
+
+class CheckpointStore:
+    """Manages discovery, caching, and querying of model checkpoints from checkpoints/checkpoints.yaml."""
 
     def __init__(self, path: Union[str, Path, None] = None) -> None:
         self._main_path: str = self.find_path(path)
         self._load_path: str = self._main_path
         self._list: Optional[List[Checkpoint]] = None
 
-    @property
-    def data_path(self) -> str:
-        """Returns the main path of the checkpoints configuration file."""
-        return self._main_path
-
     @classmethod
     def find_path(cls, path: Union[str, Path, None] = None) -> str:
         """Finds the path to the checkpoints configuration file."""
         if path is not None:
             return str(path)
-        return cls.DEFAULT_DATA_PATH
+        return "checkpoints/checkpoints.yaml"
 
     def load(self, path: Union[str, Path, None] = None) -> List[Checkpoint]:
         """Loads checkpoints from YAML and discovers additional *.pt files in the checkpoints directory."""
         self._load_path = str(path) if path is not None else self._main_path
         yaml_file = Path(self._load_path)
-        base_dir  = yaml_file.parent
+        base_file  = yaml_file.parent
 
         raw_dict: Dict[str, Any] = {}
         if yaml_file.exists():
@@ -105,54 +133,37 @@ class CheckpointData:
                     raw_dict = {}
 
         checkpoints: List[Checkpoint] = []
-        seen_ids: set = set()
         seen_paths: set = set()
-        norm_base_dir = str(base_dir).replace("\\", "/").rstrip("/")
+
+        def add(cp: Checkpoint, check_path: bool) -> None:
+            if not cp.id or not cp.path:
+                return
+            cpath = cp.full_path.resolve().as_posix().lower()
+            if check_path and cpath in seen_paths:
+                return
+
+            checkpoints.append(cp)
+            seen_paths.add(cpath)
 
         # 1. Load checkpoints from YAML
         for cp_id, cp_data in raw_dict.items():
             if not isinstance(cp_data, dict):
                 continue
-
-            raw_path = str(cp_data.get("path", cp_id))
-            norm_raw = raw_path.replace("\\", "/")
-            if norm_raw.startswith(norm_base_dir + "/"):
-                rel_path = norm_raw[len(norm_base_dir) + 1 :]
-            else:
-                rel_path = norm_raw
-
-            description = str(cp_data.get("description", ""))
-            gdrive_id = cp_data.get("gdrive_id")
-
-            checkpoints.append(
-                Checkpoint(
-                    id=str(cp_id),
-                    path=rel_path,
-                    info=description,
-                    gdrive_id=str(gdrive_id) if gdrive_id else None,
-                    base=norm_base_dir,
-                )
-            )
-            seen_ids.add(str(cp_id).lower())
-            seen_paths.add(rel_path.lower())
-            seen_paths.add(Path(rel_path).name.lower())
+            cp = Checkpoint().parse(cp_data, base_file, cp_id)
+            add(cp, False)
 
         # 2. Discover additional local *.pt files strictly inside the checkpoints directory
-        if base_dir.exists() and base_dir.is_dir():
-            for f in sorted(base_dir.glob("*.pt")):
-                f_name = f.name
-                rel_f = str(f.relative_to(base_dir).as_posix())
-                if f_name.lower() not in seen_ids and rel_f.lower() not in seen_paths:
-                    checkpoints.append(
-                        Checkpoint(
-                            id=f_name,
-                            path=rel_f,
-                            info=f"Local checkpoint ({f_name})",
-                            base=norm_base_dir,
-                        )
-                    )
-                    seen_ids.add(f_name.lower())
-                    seen_paths.add(rel_f.lower())
+        if base_file.exists() and base_file.is_dir():
+            for f in sorted(base_file.glob("*.pt")):
+                file_name = f.name
+                file_rel = f.relative_to(base_file).as_posix()
+                cp = Checkpoint(
+                    id=file_name,
+                    path=file_rel,
+                    info=f"Local checkpoint ({file_name})",
+                    base=base_file.as_posix(),
+                )
+                add(cp, True)
 
         self._list = checkpoints
         return self._list
@@ -162,6 +173,10 @@ class CheckpointData:
         if self._list is None:
             self.load()
         return self._list or []
+
+    def clear(self) -> None:
+        """Clears the cached checkpoints list."""
+        self._list = None
 
     def find(self, index_or_id: Union[int, str]) -> Optional[Checkpoint]:
         """
@@ -176,6 +191,8 @@ class CheckpointData:
             idx = int(str_val)
             if 1 <= idx <= len(checkpoints):
                 return checkpoints[idx - 1]
+            else:
+                return None
 
         # Lookup by ID, path, or filename/stem (case-insensitive)
         target = str_val.lower()
@@ -189,7 +206,3 @@ class CheckpointData:
                 return cp
 
         return None
-
-    def clear(self) -> None:
-        """Clears the cached checkpoints list."""
-        self._list = None

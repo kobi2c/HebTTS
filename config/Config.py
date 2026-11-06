@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
 from .Speaker import Speaker, SpeakerData
-from .Checkpoint import Checkpoint, CheckpointData
+from .Checkpoint import Checkpoint, CheckpointStore
 
 
 class MbdMode(IntEnum):
@@ -100,7 +100,7 @@ class Config:
 
     def reset(self) -> "Config":
         """Resets all configuration fields in-place to their default values."""
-        checkpoints = [c.path for c in CheckpointData().list()]
+        checkpoints = [c.path for c in CheckpointStore().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
         speakers = SpeakerData().list()
         default_speaker = speakers[0].id if speakers else "osim"
@@ -207,4 +207,3 @@ class Config:
         return self.from_dict(parsed_dict)
 
     loadJson = _LoadJsonDescriptor()
-

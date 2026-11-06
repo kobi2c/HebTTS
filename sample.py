@@ -13,7 +13,7 @@ from valle.models import get_model
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from utils import AttributeDict
 from nikud_converter import convert_nikud_text
-from config import SpeakerData, CheckpointData
+from config import SpeakerData, CheckpointStore
 
 
 class Sampler:
@@ -22,7 +22,7 @@ class Sampler:
 
     def __init__( self, tokens_file=DEFAULT_TOKENS_FILE, vocab_file=DEFAULT_VOCAB_FILE ):
         self.speakers    = SpeakerData()
-        self.checkpoints = CheckpointData()
+        self.checkpoints = CheckpointStore()
         self.tokens_file = tokens_file
         self.vocab_file  = vocab_file
 
@@ -45,13 +45,13 @@ class Sampler:
     def print_checkpoints(self):
         checkpoints = self.checkpoints.list()
         print("\nAvailable checkpoints:")
-        print("-" * 85)
-        print(f"{'Number':<8} {'Checkpoint ID':<20} {'Status':<12} {'Description'}")
-        print("-" * 85)
+        print("-" * 95)
+        print(f"{'Number':<8} {'Checkpoint ID':<20} {'Path':<20} {'Status':<10} {'Description'}")
+        print("-" * 95)
         for idx, cp in enumerate(checkpoints, start=1):
             status = "Found" if cp.exists else "Missing"
-            print(f"{idx:<8} {cp.id:<20} {status:<12} {cp.info}")
-        print("-" * 85 + "\n")
+            print(f"{idx:<8} {cp.id:<20} {cp.path:<20} {status:<10} {cp.info}")
+        print("-" * 95 + "\n")
 
     def resolve_checkpoint(self, checkpoint_arg):
         cp = self.checkpoints.find(checkpoint_arg)
