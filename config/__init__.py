@@ -7,8 +7,8 @@ from .Config import (
     audio_to_base64,
     base64_to_audio,
 )
-from .Speaker    import ( Speaker    , SpeakerData    )
-from .Checkpoint import ( Checkpoint , CheckpointStore )
+from .Speaker    import ( Speaker    , SpeakerStore    , SpeakerData    )
+from .Checkpoint import ( Checkpoint , CheckpointStore , CheckpointData )
 
 __all__ = [
     "Config",
@@ -19,7 +19,9 @@ __all__ = [
     "audio_to_base64",
     "base64_to_audio",
     "Speaker",
+    "SpeakerStore",
     "SpeakerData",
     "Checkpoint",
+    "CheckpointStore",
     "CheckpointData",
 ]

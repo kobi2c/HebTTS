@@ -1,11 +1,13 @@
 osim:
-  text-prompt: "אני משתדל מאוד שכל חסות תהיה מיוחדת ושונה"
-  audio-prompt: "osim.wav"
+  audio-file: "osim.wav"
+  audio-text: "אני משתדל מאוד שכל חסות תהיה מיוחדת ושונה"
 
 geek:
-  text-prompt: "מביא הרבה מהסיבות"
-  audio-prompt: "geek.wav"
+  audio-file: "geek.wav"
+  audio-text: "מביא הרבה מהסיבות"
+  
 
 shaul:
-  text-prompt: "ובשביל להבין למה מחיר הדלק כל כך עלה, צריך לחזור שנתיים אחורנית."
-  audio-prompt: "shaul.wav"
+  audio-file: "shaul.wav"
+  audio-text: "ובשביל להבין למה מחיר הדלק כל כך עלה, צריך לחזור שנתיים אחורנית."
+

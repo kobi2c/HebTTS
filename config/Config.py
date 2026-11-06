@@ -7,7 +7,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
-from .Speaker import Speaker, SpeakerData
+from .Speaker import Speaker, SpeakerStore
 from .Checkpoint import Checkpoint, CheckpointStore
 
 
@@ -102,7 +102,7 @@ class Config:
         """Resets all configuration fields in-place to their default values."""
         checkpoints = [c.path for c in CheckpointStore().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
-        speakers = SpeakerData().list()
+        speakers = SpeakerStore().list()
         default_speaker = speakers[0].id if speakers else "osim"
 
         self.checkpoint = default_checkpoint

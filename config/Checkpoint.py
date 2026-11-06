@@ -206,3 +206,8 @@ class CheckpointStore:
                 return cp
 
         return None
+
+
+# Backward-compatible alias
+CheckpointData = CheckpointStore
+

@@ -13,7 +13,7 @@ from valle.models import get_model
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from utils import AttributeDict
 from nikud_converter import convert_nikud_text
-from config import SpeakerData, CheckpointStore
+from config import SpeakerStore, CheckpointStore
 
 
 class Sampler:
@@ -21,37 +21,53 @@ class Sampler:
     DEFAULT_VOCAB_FILE   = "tokenizer/vocab.txt"
 
     def __init__( self, tokens_file=DEFAULT_TOKENS_FILE, vocab_file=DEFAULT_VOCAB_FILE ):
-        self.speakers    = SpeakerData()
+        self.speakers    = SpeakerStore()
         self.checkpoints = CheckpointStore()
         self.tokens_file = tokens_file
         self.vocab_file  = vocab_file
 
 
 
-    def print_speakers(self):
-        speakers = self.speakers.list()
-        print("\nAvailable speakers:")
-        print("-" * 80)
-        print(f"{'Number':<8} {'Speaker ID':<15} {'Audio Prompt':<15} {'Text Prompt'}")
-        print("-" * 80)
-        for idx, spk in enumerate(speakers, start=1):
-            prompt_text = spk.txt
-            if len(prompt_text) > 35:
-                prompt_text = prompt_text[:32] + "..."
-            audio_prompt = spk.wav_base
-            print(f"{idx:<8} {spk.id:<15} {audio_prompt:<15} {prompt_text}")
-        print("-" * 80 + "\n")
+    def _print_table(self, title: str, items: list, fields: list):
+        """Prints a formatted tabular list of items based on field definitions."""
+        print(f"\n{title}")
+        header_cols = [f"{'Number':<8}"] + [
+            f"{f['title']:<{f['width']}}" if f["width"] > 0 else f["title"]
+            for f in fields
+        ]
+        header = " ".join(header_cols)
+        sep = "-" * max(len(header), 95)
+
+        print(sep)
+        print(header)
+        print(sep)
+        for idx, item in enumerate(items, start=1):
+            row_cols = [f"{idx:<8}"] + [
+                f"{str(f['value'](item)):<{f['width']}}" if f["width"] > 0 else str(f['value'](item))
+                for f in fields
+            ]
+            print(" ".join(row_cols))
+        print(sep + "\n")
+
+    def print_speakers(self, speakers=None):
+        if speakers is None:
+            speakers = self.speakers.list()
+        fields = [
+            {"title": "ID"         ,  "width": 15, "value": lambda spk: spk.id},
+            {"title": "Audio-File" ,  "width": 15, "value": lambda spk: spk.wav},
+            {"title": "Audio-Text" ,  "width": 0,  "value": lambda spk: spk.txt[:32] + "..." if len(spk.txt) > 35 else spk.txt},
+        ]
+        self._print_table("Available speakers:", speakers, fields)
 
     def print_checkpoints(self):
         checkpoints = self.checkpoints.list()
-        print("\nAvailable checkpoints:")
-        print("-" * 95)
-        print(f"{'Number':<8} {'Checkpoint ID':<20} {'Path':<20} {'Status':<10} {'Description'}")
-        print("-" * 95)
-        for idx, cp in enumerate(checkpoints, start=1):
-            status = "Found" if cp.exists else "Missing"
-            print(f"{idx:<8} {cp.id:<20} {cp.path:<20} {status:<10} {cp.info}")
-        print("-" * 95 + "\n")
+        fields = [
+            {"title": "Checkpoint ID", "width": 20, "value": lambda cp: cp.id},
+            {"title": "Path",          "width": 20, "value": lambda cp: cp.path},
+            {"title": "Status",        "width": 10, "value": lambda cp: "Found" if cp.exists else "Missing"},
+            {"title": "Description",   "width": 0,  "value": lambda cp: cp.info},
+        ]
+        self._print_table("Available checkpoints:", checkpoints, fields)
 
     def resolve_checkpoint(self, checkpoint_arg):
         cp = self.checkpoints.find(checkpoint_arg)
@@ -68,7 +84,7 @@ class Sampler:
     def resolve_speaker(self, speaker_arg, speakers=None):
         spk = self.speakers.find(speaker_arg)
         if spk:
-            return spk.id, {"text-prompt": spk.txt, "audio-prompt": spk.wav}
+            return spk.id, {"text-prompt": spk.txt, "audio-prompt": str(spk.full_path)}
 
         print(f"Error: Speaker '{speaker_arg}' not found.")
         self.print_speakers(speakers)

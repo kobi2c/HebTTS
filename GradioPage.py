@@ -20,7 +20,7 @@ from config import (
     MbdMode,
     RandomMode,
     NikudMode,
-    SpeakerData,
+    SpeakerStore,
     CheckpointStore,
 )
 from sample import Sampler
@@ -176,10 +176,10 @@ class GradioPage:
 
         # 1. Resolve speaker prompt audio and text
         if cfg.speaker_mode == "Predefined Speaker":
-            spk = SpeakerData().find(cfg.predefined_speaker)
+            spk = SpeakerStore().find(cfg.predefined_speaker)
             if not spk:
                 raise gr.Error(f"Predefined speaker '{cfg.predefined_speaker}' not found.")
-            prompt_audio = spk.wav
+            prompt_audio = str(spk.full_path)
             prompt_text = spk.txt
         else:  # Custom Voice Clone
             if not cfg.clone_audio or not os.path.exists(cfg.clone_audio):
@@ -256,14 +256,14 @@ class GradioPage:
         checkpoints = [c.path for c in CheckpointStore().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
 
-        speakers = SpeakerData().list()
+        speakers = SpeakerStore().list()
         speaker_names = [s.id for s in speakers]
         default_speaker = speakers[0].id if speakers else "osim"
 
         def get_speaker_preview(spk_id: str) -> Tuple[Optional[str], str]:
-            spk = SpeakerData().find(spk_id)
+            spk = SpeakerStore().find(spk_id)
             if spk:
-                return spk.wav, spk.txt
+                return str(spk.full_path), spk.txt
             return None, ""
 
         default_preview_audio, default_preview_text = get_speaker_preview(self.config.predefined_speaker)
