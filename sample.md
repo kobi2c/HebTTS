@@ -111,7 +111,7 @@ sampler.run([
 ])
 ```
 
-## Samples
+## All Samples
 
 ```bash
 docker-run python sample.py --speaker-list

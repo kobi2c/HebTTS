@@ -160,10 +160,26 @@ class SpeakerStore:
             else:
                 return None
 
-        # Lookup by speaker ID (case-insensitive)
-        target = str_val.lower()
+        # Lookup by ID, audio path, or filename/stem
+        target = str_val
+        target_name = Path(str_val).name
+        target_stem = Path(str_val).stem
+
         for spk in speakers:
-            if spk.id.lower() == target:
+            candidates = {
+                spk.id,
+                spk.wav,
+                Path(spk.wav).name,
+                Path(spk.wav).stem,
+                spk.full_path.as_posix(),
+                spk.full_path.name,
+                spk.full_path.stem,
+            }
+            if (
+                target in candidates
+                or target_name in candidates
+                or target_stem in candidates
+            ):
                 return spk
 
         return None

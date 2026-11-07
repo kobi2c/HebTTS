@@ -20,14 +20,15 @@ Mounting `%CD%:/app` ensures that scripts and generated outputs sync with your h
 
 ---
 
-### 1. Download Model Checkpoint
+### 1. Gradio Web Interface (`GradioPage.py`)
 ```bash
-docker-run gdown 11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv
+docker-run  python GradioPage.py
 ```
+Open your browser at `http://localhost:7860`.
 
 ### 2. Quick Sample Generator (`sample.py`)
 ```bash
-# Default run (shaul speaker, reads sample.txt, saves to sample.wav)
+# Default run (shaul speaker, reads samples/sample.txt, saves to samples/sample.wav)
 docker-run python sample.py
 
 # List available speakers
@@ -43,16 +44,16 @@ docker-run python sample.py --speaker geek --text "שָׁלוֹם עָלֵיכֶ
 docker-run python sample.py --input samples/sample.txt
 ```
 
-### 3. Advanced Inference (`infer.py`)
+### 3. Download Model Checkpoint
+```bash
+docker-run gdown 11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv
+```
+
+
+### 4. Advanced Inference (`infer.py`)
 ```bash
 docker-run infer.py --checkpoint checkpoint.pt --output-dir ./out --text "שלום עולם"
 ```
-
-### 4. Gradio Web Interface (`GradioPage.py`)
-```bash
-docker-run  python GradioPage.py
-```
-Open your browser at `http://localhost:7860`.
 
 ### 5. Batch Voice & Subtitle Generator (`make_voice.py`)
 Synthesize speech and generate synchronized `.srt` subtitles from `.mki` script files containing dynamic voice directives (`@` for updates, `!` for reset):

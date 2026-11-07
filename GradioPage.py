@@ -119,7 +119,7 @@ class GradioPage:
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
-            self.model, _ = self.sampler.load_model(actual_path, self.device)
+            self.model, _ = self.sampler.load_model(str(actual_path), self.device)
             self.checkpoint = checkpoint_path
             print("Model loaded successfully.")
 

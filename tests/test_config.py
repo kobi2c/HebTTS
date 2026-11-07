@@ -653,11 +653,11 @@ def test_speaker_data():
     found_by_int = mgr.find(1)
     found_by_str_digit = mgr.find("1")
     found_by_id = mgr.find("osim")
-    found_by_id_upper = mgr.find("OSIM")
+    found_by_wav = mgr.find("osim.wav")
     assert found_by_int is s1
     assert found_by_str_digit is s1
     assert found_by_id is s1
-    assert found_by_id_upper is s1
+    assert found_by_wav is s1
 
     # find second speaker: geek
     s2 = mgr.find(2)
@@ -787,24 +787,13 @@ def test_checkpoint_data():
     found_by_id = mgr.find("checkpoint_01")
 
 
-    found_by_id_upper = mgr.find("CHECKPOINT_01")
 
 
     found_by_full_path = mgr.find("checkpoints/checkpoint_01.pt")
 
-
     assert found_by_int is c1
-
-
     assert found_by_str_digit is c1
-
-
     assert found_by_id is c1
-
-
-    assert found_by_id_upper is c1
-
-
     assert found_by_full_path is c1
 
 

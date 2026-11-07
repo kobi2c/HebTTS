@@ -194,14 +194,25 @@ class CheckpointStore:
             else:
                 return None
 
-        # Lookup by ID, path, or filename/stem (case-insensitive)
-        target = str_val.lower()
-        target_name = Path(str_val).name.lower()
+        # Lookup by ID, path, or filename/stem
+        target = str_val
+        target_name = Path(str_val).name
+        target_stem = Path(str_val).stem
+
         for cp in checkpoints:
+            candidates = {
+                cp.id,
+                cp.path,
+                Path(cp.path).name,
+                Path(cp.path).stem,
+                cp.full_path.as_posix(),
+                cp.full_path.name,
+                cp.full_path.stem,
+            }
             if (
-                cp.id.lower() in (target, target_name)
-                or Path(cp.path).stem.lower() in (target, target_name)
-                or cp.full_path.as_posix().lower() == target
+                target in candidates
+                or target_name in candidates
+                or target_stem in candidates
             ):
                 return cp
 
@@ -210,4 +221,3 @@ class CheckpointStore:
 
 # Backward-compatible alias
 CheckpointData = CheckpointStore
-
