@@ -150,17 +150,34 @@ def test_mki_parsing_with_config():
     for c in chunks:
         assert len(c) <= 100, f"Chunk exceeded max_len=100: {len(c)} chars ({c})"
     assert len(chunks) >= 2
-    # Test apply_fade
-    from make_voice import apply_fade
+    # Test NoiseFix.fade and NoiseFix.Fade
+    from config import NoiseFix
     import numpy as np
     raw_audio = np.ones(2400, dtype=np.float32)  # 100ms at 24kHz
-    faded = apply_fade(raw_audio, sr=24000, fade_in_ms=20.0, fade_out_ms=20.0)
+    faded = NoiseFix.fade(raw_audio, sr=24000, fade_in_ms=20.0, fade_out_ms=20.0)
     assert faded[0] == 0.0, f"Expected 0.0 at start, got {faded[0]}"
     assert faded[-1] == 0.0, f"Expected 0.0 at end, got {faded[-1]}"
     assert np.isclose(faded[480], 1.0, atol=1e-3), "Expected mid-body to be 1.0"
-    assert np.array_equal(apply_fade(raw_audio, fade_in_ms=0, fade_out_ms=0), raw_audio)
-    assert len(apply_fade(np.array([], dtype=np.float32))) == 0
-    print("[PASS] VoiceMaker.parse_mki, split_text, and apply_fade verified.")
+    assert np.array_equal(NoiseFix.fade(raw_audio, fade_in_ms=0, fade_out_ms=0), raw_audio)
+    assert len(NoiseFix.fade(np.array([], dtype=np.float32))) == 0
+
+    # Test NoiseFix.fade
+    assert len(NoiseFix.trim(np.array([], dtype=np.float32))) == 0
+    zeros = np.zeros(2400, dtype=np.float32)
+    assert np.array_equal(NoiseFix.trim(zeros), zeros)
+
+    # Synthetic signal: 200ms noise (peak 0.02) + 50ms silence + 500ms speech tone (peak 0.5)
+    sr = 24000
+    noise = np.random.uniform(-0.02, 0.02, int(sr * 0.20)).astype(np.float32)
+    silence = np.zeros(int(sr * 0.05), dtype=np.float32)
+    t = np.linspace(0, 0.5, int(sr * 0.5), endpoint=False, dtype=np.float32)
+    speech = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    test_sig = np.concatenate([noise, silence, speech])
+    trimmed = NoiseFix.trim(test_sig, sr=sr, pad_ms=30.0)
+    cut_ms = ((len(test_sig) - len(trimmed)) / sr) * 1000.0
+    assert 200.0 <= cut_ms <= 230.0, f"Expected cut between 200ms and 230ms, got {cut_ms}ms"
+
+    print("[PASS] VoiceMaker.parse_mki, split_text, apply_fade, and trim_leading_noise verified.")
 
 def test_generate_audio_strict_config():
     from GradioPage import GradioPage
@@ -468,6 +485,11 @@ def test_range_and_range_list():
     assert r_at_end.resolve(10) == (10, 10)
     assert r2.resolve(10) == (2, 6)
     assert Range(15, 20).resolve(10) == (10, 10)
+    assert Range().resolve(10) == (1, 10)
+    assert Range().resolve(0) == (1, 1)
+    assert Range(0, 15).resolve(10) == (1, 10)
+    assert Range(-5, 0).resolve(10) == (1, 1)
+    assert r2.resolve(0) == (1, 1)
     assert r2.contains(2) is True
     assert r2.contains(4) is True
     assert r2.contains(6) is True
@@ -477,17 +499,17 @@ def test_range_and_range_list():
     assert 1 not in r2
     # 3. RangeList parsing and normalization
     rl = RangeList.parse("10-12, 1-3, 5, 2-4, @-2")
-    norm = rl.normalize(total_count=15)
+    norm = rl.normalize(last=15)
     # Merges @-2, 1-3, 2-4, 5 -> [1, 5] and 10-12 -> [10, 12]
     assert len(norm.ranges) == 2
     assert norm.ranges[0] == Range(1, 5)
     assert norm.ranges[1] == Range(10, 12)
     # Contiguous range merging: [1, 3] and [4, 6] -> [1, 6]
-    rl_cont = RangeList.parse("1-3, 4-6").normalize(total_count=10)
+    rl_cont = RangeList.parse("1-3, 4-6").normalize(last=10)
     assert len(rl_cont.ranges) == 1
     assert rl_cont.ranges[0] == Range(1, 6)
     # Wildcard lists with resolution
-    rl_wild = RangeList.parse("@-3, 8-@, 5").normalize(total_count=10)
+    rl_wild = RangeList.parse("@-3, 8-@, 5").normalize(last=10)
     assert len(rl_wild.ranges) == 3
     assert rl_wild.ranges[0] == Range(1, 3)
     assert rl_wild.ranges[1] == Range(5, 5)

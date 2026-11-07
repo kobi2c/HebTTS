@@ -20,6 +20,7 @@ from config import (
     SpeakerStore,
     Range,
     RangeList,
+    NoiseFix,
     audio_to_base64,
     base64_to_audio,
 )
@@ -29,6 +30,7 @@ from valle.data import AudioTokenizer, tokenize_audio
 from valle.data.collation import get_text_token_collater
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from nikud_converter import convert_nikud_text, has_nikud
+
 def split_text(text: str, max_len: int = 100) -> List[str]:
     """
     Splits Hebrew text into natural clauses and sentences not exceeding max_len characters.
@@ -102,25 +104,8 @@ def format_srt_time(seconds: float) -> str:
     secs = int(seconds % 60)
     millis = int((seconds - int(seconds)) * 1000)
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-def apply_fade(
-    audio: np.ndarray,
-    sr: int = 24000,
-    fade_in_ms: float = 20.0,
-    fade_out_ms: float = 20.0,
-) -> np.ndarray:
-    """Applies a smooth raised-cosine (Hann) fade-in and fade-out to suppress vocoder boundary clicks/noise."""
-    if len(audio) == 0 or (fade_in_ms <= 0 and fade_out_ms <= 0):
-        return audio
-    audio = audio.copy()
-    in_samples = min(int(sr * (fade_in_ms / 1000.0)), len(audio) // 2)
-    out_samples = min(int(sr * (fade_out_ms / 1000.0)), len(audio) // 2)
-    if in_samples > 0:
-        fade_in = 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, in_samples, endpoint=True, dtype=audio.dtype)))
-        audio[:in_samples] *= fade_in
-    if out_samples > 0:
-        fade_out = 0.5 * (1.0 + np.cos(np.linspace(0.0, np.pi, out_samples, endpoint=True, dtype=audio.dtype)))
-        audio[-out_samples:] *= fade_out
-    return audio
+
+
 class VoiceMaker:
     """
     Batch speech generator for .mki script files with dynamic settings overrides.
@@ -237,6 +222,8 @@ class VoiceMaker:
         text_collater: Any,
         alef_bert_tokenizer: AlefBERTRootTokenizer,
         fade_ms: float = 20.0,
+        trim_noise: bool = True,
+        pad_ms: float = 30.0,
     ) -> np.ndarray:
         """Synthesizes a single chunk using cached model and prompt representations."""
         prompt_audio, prompt_text = self.resolve_speaker_prompt(config)
@@ -274,9 +261,12 @@ class VoiceMaker:
         max_val = np.abs(audio_np).max()
         if max_val > 1.0:
             audio_np = audio_np / max_val
+        # Trim leading vocoder startup noise and clicks before speech onset
+        if trim_noise:
+            audio_np = NoiseFix.trim(audio_np, sr=24000, pad_ms=pad_ms)
         # Apply smooth micro fade-in and fade-out to suppress vocoder boundary clicks/transients
         if fade_ms > 0:
-            audio_np = apply_fade(audio_np, sr=24000, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
+            audio_np = NoiseFix.fade(audio_np, sr=24000, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
         return audio_np
     def run(self, args: Optional[Union[argparse.Namespace, List[str]]] = None) -> Path:
         """Main execution workflow for processing .mki files."""
@@ -315,49 +305,69 @@ class VoiceMaker:
             indices = active_range.indices(len(all_chunks))
             print(f"[Range] Filter active: {active_range} ({len(indices)} of {len(all_chunks)} chunks selected).")
 
+        fade_ms = float(getattr(args, "fade_ms", 20.0))
+        trim_noise = bool(getattr(args, "trim_noise", True))
+        pad_ms = float(getattr(args, "pad_ms", 30.0))
+        clean_existing = bool(getattr(args, "clean_existing", False))
+
         all_wavs: List[np.ndarray] = []
         srt_entries: List[Tuple[float, float, str]] = []
         current_time_sec = 0.0
         sample_rate = 24000
 
-        # 3. Generate audio chunk by chunk
-        for chunk_idx, (chunk_config, chunk_text) in enumerate(tqdm(all_chunks, desc="Generating Audio"), start=1):
+        # 3. Process or generate audio chunk by chunk
+        desc = "Cleaning Audio" if clean_existing else "Generating Audio"
+        for chunk_idx, (chunk_config, chunk_text) in enumerate(tqdm(all_chunks, desc=desc), start=1):
             chunk_wav_path = output_dir / f"{basename}_{chunk_idx:03d}.wav"
             chunk_txt_path = output_dir / f"{basename}_{chunk_idx:03d}.txt"
 
-            should_synthesize = True
-            if active_range is not None and chunk_idx not in active_range:
+            if clean_existing:
                 if chunk_wav_path.exists():
-                    should_synthesize = False
-
-            if should_synthesize:
-                checkpoint = chunk_config.checkpoint
-                mbd = bool(chunk_config.mbd)
-
-                # Ensure model and tokenizers are loaded in memory
-                model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.page.load_model_if_needed(
-                    checkpoint, mbd
-                )
-
-                # Synthesize chunk
-                fade_ms = float(getattr(args, "fade_ms", 20.0))
-                audio_np = self.synthesize_chunk(
-                    chunk_text=chunk_text,
-                    config=chunk_config,
-                    model=model,
-                    audio_tokenizer=audio_tokenizer,
-                    text_collater=text_collater,
-                    alef_bert_tokenizer=alef_bert_tokenizer,
-                    fade_ms=fade_ms,
-                )
-
-                # Save individual chunk wav and txt
-                sf.write(str(chunk_wav_path), audio_np, sample_rate)
-                with open(chunk_txt_path, "w", encoding="utf-8") as f:
-                    f.write(chunk_text)
+                    audio_np, sr_disk = sf.read(str(chunk_wav_path), dtype="float32")
+                    if active_range is None or chunk_idx in active_range:
+                        if trim_noise:
+                            audio_np = NoiseFix.trim(audio_np, sr=sr_disk, pad_ms=pad_ms)
+                        if fade_ms > 0:
+                            audio_np = NoiseFix.fade(audio_np, sr=sr_disk, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
+                        sf.write(str(chunk_wav_path), audio_np, sr_disk)
+                else:
+                    print(f"Warning: Chunk file {chunk_wav_path} not found on disk to clean.")
+                    continue
             else:
-                # Re-use existing chunk audio from disk
-                audio_np, _ = sf.read(str(chunk_wav_path), dtype="float32")
+                should_synthesize = True
+                if active_range is not None and chunk_idx not in active_range:
+                    if chunk_wav_path.exists():
+                        should_synthesize = False
+
+                if should_synthesize:
+                    checkpoint = chunk_config.checkpoint
+                    mbd = bool(chunk_config.mbd)
+
+                    # Ensure model and tokenizers are loaded in memory
+                    model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.page.load_model_if_needed(
+                        checkpoint, mbd
+                    )
+
+                    # Synthesize chunk
+                    audio_np = self.synthesize_chunk(
+                        chunk_text=chunk_text,
+                        config=chunk_config,
+                        model=model,
+                        audio_tokenizer=audio_tokenizer,
+                        text_collater=text_collater,
+                        alef_bert_tokenizer=alef_bert_tokenizer,
+                        fade_ms=fade_ms,
+                        trim_noise=trim_noise,
+                        pad_ms=pad_ms,
+                    )
+
+                    # Save individual chunk wav and txt
+                    sf.write(str(chunk_wav_path), audio_np, sample_rate)
+                    with open(chunk_txt_path, "w", encoding="utf-8") as f:
+                        f.write(chunk_text)
+                else:
+                    # Re-use existing chunk audio from disk
+                    audio_np, _ = sf.read(str(chunk_wav_path), dtype="float32")
 
             duration = len(audio_np) / float(sample_rate)
             start_time = current_time_sec
@@ -420,6 +430,25 @@ class VoiceMaker:
             type=float,
             default=20.0,
             help="Micro fade-in and fade-out duration in milliseconds to prevent boundary clicks (default: 20.0)",
+        )
+       
+        parser.add_argument(
+            "--trim_noise",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Trim leading vocoder startup noise packet before speech onset (default: True, use --no-trim_noise to disable)",
+        )
+        parser.add_argument(
+            "--pad_ms",
+            type=float,
+            default=30.0,
+            help="Pre-speech safety silence padding in milliseconds to keep before speech onset (default: 30.0)",
+        )
+        parser.add_argument(
+            "--clean_existing",
+            action="store_true",
+            default=False,
+            help="Clean and re-save existing chunk WAV files on disk using noise trimming and fading without re-synthesizing, then rebuild merged WAV and SRT",
         )
         parser.add_argument(
             "--range",

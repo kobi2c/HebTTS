@@ -10,6 +10,7 @@ from .Config import (
 from .Speaker    import ( Speaker    , SpeakerStore    , SpeakerData    )
 from .Checkpoint import ( Checkpoint , CheckpointStore , CheckpointData )
 from .Range      import ( Range      , RangeList                        )
+from .NoiseFix   import ( NoiseFix, trim_leading_noise, apply_fade      )
 
 __all__ = [
     "Config",
@@ -27,4 +28,7 @@ __all__ = [
     "CheckpointData",
     "Range",
     "RangeList",
+    "NoiseFix",
+    "trim_leading_noise",
+    "apply_fade",
 ]

@@ -9,7 +9,7 @@ class Range:
     Represents an inclusive 1-based index interval [start, end].
     None indicates an open/unbounded boundary:
     - start=None: from the beginning (1)
-    - end=None: through to the final element (total_count)
+    - end=None: through to the final element (last)
     """
     start: Optional[int] = None
     end: Optional[int] = None
@@ -37,7 +37,7 @@ class Range:
                 raise ValueError(f"Range index must be positive (>= 1), got {val}")
             return cls(start=val, end=val)
 
-        # 2. Open-ended start: '@-Y' or 'x-Y' / 'X-Y'
+        # 2. Open-ended start: '@-Y'
         m_start_wildcard = re.fullmatch(r"[@]-(\d+)", s)
         if m_start_wildcard:
             end_val = int(m_start_wildcard.group(1))
@@ -45,7 +45,7 @@ class Range:
                 raise ValueError(f"Range end must be positive (>= 1), got {end_val}")
             return cls(start=None, end=end_val)
 
-        # 3. Open-ended end: 'Y-@' or 'Y-x' / 'Y-X'
+        # 3. Open-ended end: 'Y-@'
         m_end_wildcard = re.fullmatch(r"(\d+)-[@]", s)
         if m_end_wildcard:
             start_val = int(m_end_wildcard.group(1))
@@ -66,19 +66,29 @@ class Range:
             f"Invalid range format: '{spec}'. Supported formats: 'X-Y', 'Y', '@-Y', 'x-Y', 'Y-@', 'Y-x'."
         )
 
-    def resolve(self, total_count: int) -> Tuple[int, int]:
-        """Resolves open bounds against a known total_count and clamps to [1, total_count]."""
-        if total_count < 1:
-            return (1, 1)
+    def resolve(self, last: int) -> Tuple[int, int]:
+        """Resolves open bounds against a known last and clamps to [1, last]."""
+        last = max(1, last)
 
-        s = 1 if self.start is None else max(1, min(self.start, total_count))
-        e = total_count if self.end is None else max(1, min(self.end, total_count))
-        return (min(s, e), max(s, e))
+        if self.start is None or self.start <= 0:
+            s = 1
+        elif self.start >= last:
+            s = last
+        else:
+            s = self.start
 
-    def contains(self, index: int, total_count: Optional[int] = None) -> bool:
+        if self.end is None or self.end >= last:
+            e = last
+        elif self.end <= 0:
+            e = 1
+        else:
+            e = self.end
+        return (s, e) if s <= e else (e, s)
+
+    def contains(self, index: int, last: Optional[int] = None) -> bool:
         """Checks if a 1-based index falls within this range."""
-        if total_count is not None:
-            s, e = self.resolve(total_count)
+        if last is not None:
+            s, e = self.resolve(last)
             return s <= index <= e
 
         if self.start is not None and index < self.start:
@@ -123,19 +133,19 @@ class RangeList:
         parsed_ranges = [Range.parse(t) for t in tokens]
         return cls(parsed_ranges)
 
-    def normalize(self, total_count: Optional[int] = None) -> "RangeList":
+    def normalize(self, last: Optional[int] = None) -> "RangeList":
         """
         Normalizes ranges:
-        - Resolves open bounds if total_count is given.
+        - Resolves open bounds if last is given.
         - Sorts ranges by start.
         - Merges overlapping and contiguous intervals (e.g. [1, 3] + [4, 6] -> [1, 6]).
         """
         if not self.ranges:
             return RangeList([])
 
-        if total_count is not None:
-            # 1. Resolve all intervals against total_count
-            resolved = [r.resolve(total_count) for r in self.ranges]
+        if last is not None:
+            # 1. Resolve all intervals against last
+            resolved = [r.resolve(last) for r in self.ranges]
             resolved.sort(key=lambda item: (item[0], item[1]))
 
             merged: List[Tuple[int, int]] = []
@@ -152,7 +162,7 @@ class RangeList:
 
             return RangeList([Range(start=s, end=e) for s, e in merged])
 
-        # total_count is None: normalize unbounded / bounded separately
+        # last is None: normalize unbounded / bounded separately
         # Convert all to Range objects with start <= end
         clean_ranges: List[Range] = []
         has_wildcard_start = False
@@ -200,16 +210,16 @@ class RangeList:
 
         return RangeList(result)
 
-    def contains(self, index: int, total_count: Optional[int] = None) -> bool:
+    def contains(self, index: int, last: Optional[int] = None) -> bool:
         """Returns True if the 1-based index is covered by any range in this list."""
-        return any(r.contains(index, total_count) for r in self.ranges)
+        return any(r.contains(index, last) for r in self.ranges)
 
-    def indices(self, total_count: int) -> List[int]:
+    def indices(self, last: int) -> List[int]:
         """Returns a sorted list of unique 1-based indices that match this RangeList."""
-        normalized = self.normalize(total_count)
+        normalized = self.normalize(last)
         matched: List[int] = []
         for r in normalized.ranges:
-            s, e = r.resolve(total_count)
+            s, e = r.resolve(last)
             matched.extend(range(s, e + 1))
         return sorted(set(matched))
 
