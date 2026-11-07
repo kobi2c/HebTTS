@@ -9,6 +9,7 @@ from .Config import (
 )
 from .Speaker    import ( Speaker    , SpeakerStore    , SpeakerData    )
 from .Checkpoint import ( Checkpoint , CheckpointStore , CheckpointData )
+from .Range      import ( Range      , RangeList                        )
 
 __all__ = [
     "Config",
@@ -24,4 +25,6 @@ __all__ = [
     "Checkpoint",
     "CheckpointStore",
     "CheckpointData",
+    "Range",
+    "RangeList",
 ]
