@@ -17,12 +17,13 @@ from config import (
     MbdMode,
     RandomMode,
     NikudMode,
+    ChainMode,
     DEFAULT_TEXT,
 )
 
 
 def test_enums():
-    for enum_cls in (MbdMode, RandomMode, NikudMode):
+    for enum_cls in (MbdMode, RandomMode, NikudMode, ChainMode):
         assert enum_cls.Disabled == 0
         assert enum_cls.Enabled == 1
         assert int(enum_cls.Disabled) == 0
@@ -75,22 +76,26 @@ def test_config_defaults():
     assert cfg.seed_number == 420
     assert cfg.randomize_seed == RandomMode.Enabled
     assert cfg.nikud_converter == NikudMode.Enabled
+    assert cfg.chain_speaker == ChainMode.Enabled
     print("[PASS] Config defaults verified.")
 
 
 def test_config_dicts():
-    cfg = Config(temperature=1.2, top_k=80, mbd=MbdMode.Enabled)
+    cfg = Config(temperature=1.2, top_k=80, mbd=MbdMode.Enabled, chain_speaker=ChainMode.Disabled)
     d = cfg.to_dict()
     assert d["temperature"] == 1.2
     assert d["mbd"] == 1
     assert d["top_k"] == 80
+    assert d["chain_speaker"] == 0
     cfg_from_d = Config.from_dict(d)
     assert cfg_from_d.temperature == 1.2
     assert cfg_from_d.mbd == MbdMode.Enabled
+    assert cfg_from_d.chain_speaker == ChainMode.Disabled
     cfg_inst = Config()
     cfg_inst.from_dict(d)
     assert cfg_inst.temperature == 1.2
     assert cfg_inst.mbd == MbdMode.Enabled
+    assert cfg_inst.chain_speaker == ChainMode.Disabled
     print("[PASS] Dict conversion verified.")
 
 

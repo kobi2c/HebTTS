@@ -18,6 +18,7 @@ from config import (
     MbdMode,
     RandomMode,
     NikudMode,
+    ChainMode,
     SpeakerStore,
     Range,
     RangeList,
@@ -137,6 +138,7 @@ class VoiceMaker:
         range: Optional[str] = None,
         range_only: bool = False,
         format: Optional[List[Format]] = None,
+        chain_speaker: Optional[ChainMode] = None,
     ) -> None:
         self.page: GradioPage = page or GradioPage()
         self.sampler: Sampler = sampler or self.page.sampler
@@ -151,6 +153,7 @@ class VoiceMaker:
         self.range: Optional[str] = range
         self.range_only: bool = bool(range_only)
         self.format: List[Format] = Format.normalize(format)
+        self.chain_speaker: Optional[ChainMode] = ChainMode(int(chain_speaker)) if chain_speaker is not None else None
         # Cache reference audio embeddings per prompt
         self._cached_prompt_audio: Optional[str] = None
         self._cached_audio_prompts: Optional[torch.Tensor] = None
@@ -188,7 +191,7 @@ class VoiceMaker:
         self.range = parsed.range
 
         # Handle --range-only: can be bool flag or range string
-        range_only_val = getattr(parsed, "range_only", False)
+        range_only_val = parsed.range_only
         if isinstance(range_only_val, str):
             if not self.range:
                 self.range = range_only_val
@@ -197,8 +200,7 @@ class VoiceMaker:
             self.range_only = bool(range_only_val)
 
         # Handle format: List[Format]
-        parsed_format = getattr(parsed, "format", "wav")
-        self.format = Format.normalize(parsed_format)
+        self.format = Format.normalize(parsed.format)
 
         return parsed
 
@@ -306,12 +308,20 @@ class VoiceMaker:
         audio_tokenizer: AudioTokenizer,
         text_collater: Any,
         alef_bert_tokenizer: AlefBERTRootTokenizer,
+        prompt_audio: Optional[str] = None,
+        prompt_text: Optional[str] = None,
         fade_ms: float = 20.0,
         trim_noise: bool = True,
         pad_ms: float = 30.0,
     ) -> np.ndarray:
         """Synthesizes a single chunk using cached model and prompt representations."""
-        prompt_audio, prompt_text = self.resolve_speaker_prompt(config)
+        if prompt_audio is None or prompt_text is None:
+            resolved_audio, resolved_text = self.resolve_speaker_prompt(config)
+            if prompt_audio is None:
+                prompt_audio = resolved_audio
+            if prompt_text is None:
+                prompt_text = resolved_text
+
         # Update cached prompt representations if speaker or audio changed
         if self._cached_prompt_audio != prompt_audio or self._cached_audio_prompts is None:
             encoded_frames = tokenize_audio(audio_tokenizer, prompt_audio)
@@ -399,6 +409,7 @@ class VoiceMaker:
             basename=basename,
             active_range=active_range,
             range_only=self.range_only,
+            chain_speaker=self.chain_speaker,
             clean_existing=bool(self.clean_existing),
             trim_noise=bool(self.trim_noise),
             pad_ms=float(self.pad_ms),
@@ -411,8 +422,6 @@ class VoiceMaker:
             chunks.save_merged(output_dir, basename, self.format, merged_wav, sample_rate=24000)
             chunks.save_srt(output_dir, basename)
 
-        print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")
-        return output_dir
         print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")
         return output_dir
 

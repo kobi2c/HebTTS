@@ -25,6 +25,7 @@ from tests.test_make_voice import (
     test_voice_maker_range_only_run,
     test_voice_maker_format_options_run,
     test_voice_maker_table_progress_output,
+    test_voice_maker_chain_speaker_execution,
 )
 from tests.test_gradio_page import (
     test_generate_audio_strict_config,
@@ -51,6 +52,7 @@ ALL_TESTS = [
     ("VoiceMaker --range-only Execution & Join", test_voice_maker_range_only_run),
     ("VoiceMaker MP3 / Both Output Formats", test_voice_maker_format_options_run),
     ("VoiceMaker Structured Table Progress & Summary", test_voice_maker_table_progress_output),
+    ("VoiceMaker Sequential Speaker Chaining", test_voice_maker_chain_speaker_execution),
     ("Sampler CLI & Instance Fields", test_sampler_args),
     ("Sampler List Commands", test_sampler_list_commands),
     ("Sampler Run Execution", test_sampler_run_execution),

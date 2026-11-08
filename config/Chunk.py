@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Un
 import numpy as np
 import soundfile as sf
 
-from .Config import Config
+from .Config import Config, ChainMode
 from .Format import Format
 from .NoiseFix import NoiseFix
 from .Range import RangeList
@@ -206,6 +206,8 @@ class Chunk:
         voice_maker: Any,
         output_dir: Union[str, Path],
         basename: str,
+        prompt_audio: Optional[str] = None,
+        prompt_text: Optional[str] = None,
         fade_ms: float = 20.0,
         trim_noise: bool = True,
         pad_ms: float = 30.0,
@@ -230,6 +232,8 @@ class Chunk:
             audio_tokenizer=audio_tokenizer,
             text_collater=text_collater,
             alef_bert_tokenizer=alef_bert_tokenizer,
+            prompt_audio=prompt_audio,
+            prompt_text=prompt_text,
             fade_ms=fade_ms,
             trim_noise=trim_noise,
             pad_ms=pad_ms,
@@ -244,7 +248,7 @@ class Chunk:
         self.save_text(output_dir, basename)
 
         self.status = ChunkStatus.SYNTHESIZED
-        eos = getattr(model, "last_eos", None)
+        eos = model.last_eos
         if eos and isinstance(eos, (tuple, list)) and len(eos) >= 2:
             p_len, tot_len = eos[0], eos[1]
             diff = tot_len - p_len
@@ -321,6 +325,59 @@ class ChunkList:
         self.last_target_idx = last_target_idx
         return target_indices, last_target_idx
 
+    def resolve_prompt(
+        self,
+        chunk_idx: int,
+        output_dir: Union[str, Path],
+        basename: str,
+        chain_speaker: ChainMode = ChainMode.Enabled,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Resolves prompt audio path and transcript for chunk_idx (0-based list index).
+        If chain_speaker is enabled and previous chunk shares the same speaker identity
+        and its audio/text exist, returns (prev_wav_path, prev_text).
+        Otherwise returns (None, None), signalling to use the base speaker.
+        """
+        if not bool(chain_speaker) or chunk_idx <= 0 or chunk_idx >= len(self.chunks):
+            return None, None
+
+        prev_chunk = self.chunks[chunk_idx - 1]
+        curr_chunk = self.chunks[chunk_idx]
+
+        # Verify speaker identity did not change via ! or @ directives
+        prev_spk = (
+            prev_chunk.config.speaker_mode,
+            prev_chunk.config.predefined_speaker,
+            prev_chunk.config.clone_audio,
+        )
+        curr_spk = (
+            curr_chunk.config.speaker_mode,
+            curr_chunk.config.predefined_speaker,
+            curr_chunk.config.clone_audio,
+        )
+        if prev_spk != curr_spk:
+            return None, None
+
+        out_path = Path(output_dir)
+        prev_wav = prev_chunk.wav_path(out_path, basename)
+        prev_txt = prev_chunk.txt_path(out_path, basename)
+
+        # Check if previous chunk audio and text exist on disk
+        if prev_wav.exists() and prev_txt.exists():
+            try:
+                txt_content = prev_txt.read_text(encoding="utf-8").strip()
+            except Exception:
+                txt_content = prev_chunk.text
+            if txt_content:
+                return str(prev_wav), txt_content
+
+        # Fallback to in-memory previous chunk if available and saved
+        if prev_chunk.audio is not None and prev_chunk.text:
+            if prev_wav.exists():
+                return str(prev_wav), prev_chunk.text
+
+        return None, None
+
     def process(
         self,
         voice_maker: Any,
@@ -328,6 +385,7 @@ class ChunkList:
         basename: str,
         active_range: Optional[RangeList] = None,
         range_only: bool = False,
+        chain_speaker: Optional[ChainMode] = None,
         clean_existing: bool = False,
         trim_noise: bool = True,
         pad_ms: float = 30.0,
@@ -351,7 +409,7 @@ class ChunkList:
         print(f"{'Chunk':<10} {'Status':<14} {'Audio':<10} {'Tokens (Prompt->Total)':<24} Text")
         print("-" * 95)
 
-        for chunk in self.chunks:
+        for chunk_idx, chunk in enumerate(self.chunks):
             if range_only and chunk.index not in target_indices:
                 chunk.status = ChunkStatus.SKIPPED
                 skipped_count += 1
@@ -382,10 +440,21 @@ class ChunkList:
                         should_synthesize = False
 
                 if should_synthesize:
+                    # Resolve prompt audio and text (chaining from previous chunk if enabled)
+                    effective_chain = chain_speaker if chain_speaker is not None else chunk.config.chain_speaker
+
+                    prompt_audio, prompt_text = self.resolve_prompt(
+                        chunk_idx=chunk_idx,
+                        output_dir=out_dir,
+                        basename=basename,
+                        chain_speaker=effective_chain,
+                    )
                     chunk.synthesize(
                         voice_maker=voice_maker,
                         output_dir=out_dir,
                         basename=basename,
+                        prompt_audio=prompt_audio,
+                        prompt_text=prompt_text,
                         fade_ms=fade_ms,
                         trim_noise=trim_noise,
                         pad_ms=pad_ms,
@@ -510,4 +579,3 @@ class ChunkList:
 
         print(f"[+] Saved subtitles:          {final_srt_path}")
         return final_srt_path
-

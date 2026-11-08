@@ -15,6 +15,7 @@ from config import (
     Config,
     Format,
     RangeList,
+    ChainMode,
     ChunkStatus,
     Chunk,
     ChunkList,
@@ -202,6 +203,54 @@ def test_chunk_list_join_audio_and_save():
     print("[PASS] ChunkList join_audio, save_merged, and save_srt verified.")
 
 
+def test_chunk_list_resolve_prompt_chaining():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        out_dir = Path(tmp_dir)
+        cfg1 = Config(predefined_speaker="osim")
+        cfg2 = Config(predefined_speaker="osim")
+        cfg3_diff = Config(predefined_speaker="shani")
+
+        c1 = Chunk(index=1, config=cfg1, text="שורה ראשונה")
+        c2 = Chunk(index=2, config=cfg2, text="שורה שנייה")
+        c3 = Chunk(index=3, config=cfg3_diff, text="שורה שלישית")
+        chunk_list = ChunkList([c1, c2, c3])
+
+        # 1. Chunk 1 has no previous chunk -> (None, None)
+        p_audio, p_txt = chunk_list.resolve_prompt(0, out_dir, "test", chain_speaker=ChainMode.Enabled)
+        assert p_audio is None and p_txt is None
+
+        # 2. Chunk 2 when chunk 1 files do not exist -> (None, None)
+        p_audio, p_txt = chunk_list.resolve_prompt(1, out_dir, "test", chain_speaker=ChainMode.Enabled)
+        assert p_audio is None and p_txt is None
+
+        # Create chunk 1 files on disk
+        c1_wav = out_dir / "test_001.wav"
+        c1_txt = out_dir / "test_001.txt"
+        sf.write(str(c1_wav), np.ones(24000, dtype=np.float32) * 0.1, 24000)
+        c1_txt.write_text("שורה ראשונה", encoding="utf-8")
+
+        # 3. Chunk 2 now resolves chunk 1's wav and text
+        p_audio, p_txt = chunk_list.resolve_prompt(1, out_dir, "test", chain_speaker=ChainMode.Enabled)
+        assert p_audio == str(c1_wav)
+        assert p_txt == "שורה ראשונה"
+
+        # 4. Chunk 2 when chain_speaker=ChainMode.Disabled -> (None, None)
+        p_audio_no_chain, p_txt_no_chain = chunk_list.resolve_prompt(1, out_dir, "test", chain_speaker=ChainMode.Disabled)
+        assert p_audio_no_chain is None and p_txt_no_chain is None
+
+        # 5. Chunk 3 has different speaker ("shani") -> (None, None)
+        # Create chunk 2 files first
+        c2_wav = out_dir / "test_002.wav"
+        c2_txt = out_dir / "test_002.txt"
+        sf.write(str(c2_wav), np.ones(24000, dtype=np.float32) * 0.1, 24000)
+        c2_txt.write_text("שורה שנייה", encoding="utf-8")
+
+        p_audio_diff, p_txt_diff = chunk_list.resolve_prompt(2, out_dir, "test", chain_speaker=True)
+        assert p_audio_diff is None and p_txt_diff is None
+
+    print("[PASS] ChunkList sequential prompt chaining resolution verified.")
+
+
 def test_chunk_and_chunk_list():
     test_chunk_status_int_enum()
     test_split_text_and_srt_formatting()
@@ -209,6 +258,7 @@ def test_chunk_and_chunk_list():
     test_chunk_file_operations_and_clean()
     test_chunk_list_collection_and_from_blocks()
     test_chunk_list_join_audio_and_save()
+    test_chunk_list_resolve_prompt_chaining()
 
 
 if __name__ == "__main__":

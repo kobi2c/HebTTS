@@ -9,7 +9,7 @@ if str(root_dir) not in sys.path:
 
 import tests.setup_env  # noqa: F401
 
-from config import Config, Format, NoiseFix, split_text
+from config import Config, Format, ChainMode, NoiseFix, split_text
 from make_voice import VoiceMaker, VoiceMakerParser
 
 
@@ -148,6 +148,10 @@ def test_voice_maker_args():
     # 7. --format mp3 sets format to [Format.MP3]
     vm.parse_args(["-i", "test.mki", "--format", "mp3"])
     assert vm.format == [Format.MP3]
+
+    # 8. Direct initialization with ChainMode
+    vm3 = VoiceMaker(chain_speaker=ChainMode.Disabled)
+    assert vm3.chain_speaker == ChainMode.Disabled
     print("[PASS] VoiceMaker instance fields and parse_args verified.")
 
 
@@ -308,10 +312,77 @@ def test_voice_maker_table_progress_output():
     print("[PASS] VoiceMaker structured table progress and summary verified.")
 
 
+def test_voice_maker_chain_speaker_execution():
+    import tempfile
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        mki_file = tmp_path / "chain_test.mki"
+        mki_file.write_text("שורה ראשונה\nשורה שנייה\n", encoding="utf-8")
+        out_dir = tmp_path / "out"
+
+        vm = VoiceMaker()
+        mock_model = MagicMock()
+        mock_model.last_eos = (195, 425)
+
+        recorded_prompts = []
+
+        def mock_synth(chunk_text, model=None, prompt_audio=None, prompt_text=None, **kwargs):
+            if model is not None:
+                model.last_eos = (195, 425)
+            recorded_prompts.append((prompt_audio, prompt_text))
+            return np.ones(24000, dtype=np.float32) * 0.1
+
+        vm.synthesize_chunk = mock_synth
+        vm.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+
+        # 1. Run with default chaining (chain_speaker=True)
+        vm.run(["-i", str(mki_file), "-o", str(out_dir)])
+        assert len(recorded_prompts) == 2
+        # Chunk 1: base speaker fallback (prompt_audio is None)
+        assert recorded_prompts[0][0] is None
+        # Chunk 2: chained from chunk 1 output wav & text
+        assert recorded_prompts[1][0] == str(out_dir / "chain_test_001.wav")
+        assert recorded_prompts[1][1] == "שורה ראשונה"
+
+        # 2. Run with chain_speaker=ChainMode.Disabled
+        recorded_prompts.clear()
+        for f in out_dir.iterdir():
+            f.unlink()
+
+        vm_no_chain = VoiceMaker(chain_speaker=ChainMode.Disabled)
+        vm_no_chain.synthesize_chunk = mock_synth
+        vm_no_chain.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+        vm_no_chain.run(["-i", str(mki_file), "-o", str(out_dir)])
+        assert len(recorded_prompts) == 2
+        # Both chunks use base speaker fallback
+        assert recorded_prompts[0][0] is None
+        assert recorded_prompts[1][0] is None
+
+        # 3. Run with MKI directive disabling chain_speaker
+        recorded_prompts.clear()
+        for f in out_dir.iterdir():
+            f.unlink()
+
+        mki_disabled = tmp_path / "chain_disabled.mki"
+        mki_disabled.write_text("@{\"chain_speaker\": 0}\nשורה ראשונה\nשורה שנייה\n", encoding="utf-8")
+        vm_default = VoiceMaker()
+        vm_default.synthesize_chunk = mock_synth
+        vm_default.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+        vm_default.run(["-i", str(mki_disabled), "-o", str(out_dir)])
+        assert len(recorded_prompts) == 2
+        assert recorded_prompts[0][0] is None
+        assert recorded_prompts[1][0] is None
+
+    print("[PASS] VoiceMaker sequential speaker prompt chaining execution verified.")
+
+
 if __name__ == "__main__":
     test_mki_parsing_with_config()
     test_voice_maker_args()
     test_voice_maker_range_only_run()
     test_voice_maker_format_options_run()
     test_voice_maker_table_progress_output()
+    test_voice_maker_chain_speaker_execution()
     print("\n🎉 ALL TESTS IN tests/test_make_voice.py PASSED SUCCESSFULLY!")

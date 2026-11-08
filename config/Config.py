@@ -25,6 +25,11 @@ class NikudMode(IntEnum):
     Enabled = 1
 
 
+class ChainMode(IntEnum):
+    Disabled = 0
+    Enabled = 1
+
+
 DEFAULT_TEXT: str = (
     "שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית.\n"
     "המודל מאפשר שכפול קול ויצירת דיבור טבעי באיכות גבוהה."
@@ -97,6 +102,7 @@ class Config:
     seed_number        : int = 420
     randomize_seed     : RandomMode = RandomMode.Enabled
     nikud_converter    : NikudMode = NikudMode.Enabled
+    chain_speaker      : ChainMode = ChainMode.Enabled
 
     def reset(self) -> "Config":
         """Resets all configuration fields in-place to their default values."""
@@ -118,6 +124,7 @@ class Config:
         self.seed_number = 420
         self.randomize_seed = RandomMode.Enabled
         self.nikud_converter = NikudMode.Enabled
+        self.chain_speaker = ChainMode.Enabled
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -136,6 +143,7 @@ class Config:
             "seed_number": int(self.seed_number),
             "randomize_seed": int(self.randomize_seed),
             "nikud_converter": int(self.nikud_converter),
+            "chain_speaker": int(self.chain_speaker),
         }
 
     def _apply_dict(self, data: Dict[str, Any]) -> "Config":
@@ -170,6 +178,8 @@ class Config:
             self.randomize_seed = RandomMode(int(data["randomize_seed"]))
         if "nikud_converter" in data and data["nikud_converter"] is not None:
             self.nikud_converter = NikudMode(int(data["nikud_converter"]))
+        if "chain_speaker" in data and data["chain_speaker"] is not None:
+            self.chain_speaker = ChainMode(int(data["chain_speaker"]))
         return self
 
     from_dict = _FromDictDescriptor()

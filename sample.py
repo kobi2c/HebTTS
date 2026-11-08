@@ -386,7 +386,7 @@ class Sampler:
         self.clone_txt = parsed.clone_txt
         self.output = parsed.output
         # Handle format: List[Format]
-        parsed_format = getattr(parsed, "format", None)
+        parsed_format = parsed.format
         if parsed_format is not None:
             self.format = Format.normalize(parsed_format)
         elif parsed.output and str(parsed.output).lower().endswith(".mp3"):
