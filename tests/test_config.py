@@ -46,6 +46,17 @@ def test_enums():
     assert Format(2) == Format.MP3
     assert str(Format.WAV) == "wav"
     assert str(Format.MP3) == "mp3"
+    assert Format.WAV.extension == ".wav"
+    assert Format.MP3.extension == ".mp3"
+    assert Format.extensions() == [".wav", ".mp3"]
+    assert Format.names() == ["wav", "mp3"]
+    assert Format.normalize(None) == [Format.WAV]
+    assert Format.normalize(Format.MP3) == [Format.MP3]
+    assert Format.normalize("mp3") == [Format.MP3]
+    assert Format.normalize("wav") == [Format.WAV]
+    assert Format.normalize("both") == [Format.WAV, Format.MP3]
+    assert Format.normalize([Format.WAV, Format.MP3]) == [Format.WAV, Format.MP3]
+    assert Format.normalize_formats("both") == [Format.WAV, Format.MP3]
     print("[PASS] Enums verified.")
 
 

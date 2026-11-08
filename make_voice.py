@@ -225,35 +225,13 @@ class VoiceMaker:
         self.clean_existing: bool = clean_existing
         self.range: Optional[str] = range
         self.range_only: bool = bool(range_only)
-        self.format: List[Format] = self.normalize_formats(format)
+        self.format: List[Format] = Format.normalize(format)
         # Cache reference audio embeddings per prompt
         self._cached_prompt_audio: Optional[str] = None
         self._cached_audio_prompts: Optional[torch.Tensor] = None
         self._cached_prompt_text: Optional[str] = None
 
-    @classmethod
-    def normalize_formats(cls, val: Any) -> List[Format]:
-        """Normalizes format inputs into a List[Format]."""
-        if val is None:
-            return [Format.WAV]
-        if isinstance(val, (Format, str)):
-            val = [val]
-        formats: List[Format] = []
-        for item in val:
-            if isinstance(item, Format):
-                if item not in formats:
-                    formats.append(item)
-            elif isinstance(item, str):
-                s = item.strip().lower()
-                if s == "both":
-                    for f in (Format.WAV, Format.MP3):
-                        if f not in formats:
-                            formats.append(f)
-                else:
-                    f = Format(s)
-                    if f not in formats:
-                        formats.append(f)
-        return formats or [Format.WAV]
+    normalize_formats = Format.normalize
 
     def create_parser(self) -> VoiceMakerParser:
         """Creates and returns the command line argument parser for VoiceMaker."""
@@ -299,7 +277,7 @@ class VoiceMaker:
         if mp3_flag and parsed_format == "wav":
             self.format = [Format.MP3]
         else:
-            self.format = self.normalize_formats(parsed_format)
+            self.format = Format.normalize(parsed_format)
 
         return parsed
 

@@ -17,6 +17,7 @@ import torchaudio
 import utils  # Soundfile audio IO fallback and suppress torchvision warning
 from config import (
     Config,
+    Format,
     MbdMode,
     RandomMode,
     NikudMode,
@@ -182,8 +183,11 @@ class GradioPage:
             prompt_audio = str(spk.full_path)
             prompt_text = spk.txt
         else:  # Custom Voice Clone
+            exts_str = ", ".join(Format.extensions())
             if not cfg.clone_audio or not os.path.exists(cfg.clone_audio):
-                raise gr.Error("Please upload a reference audio (.wav or .mp3) for voice cloning.")
+                raise gr.Error(f"Please upload a reference audio ({exts_str}) for voice cloning.")
+            if Path(cfg.clone_audio).suffix.lower() not in Format.extensions():
+                raise gr.Error(f"Unsupported reference audio format. Supported formats: {exts_str}")
             if not cfg.clone_text or not cfg.clone_text.strip():
                 raise gr.Error("Please provide reference transcript text corresponding to the clone audio.")
             prompt_audio = cfg.clone_audio
@@ -328,9 +332,11 @@ class GradioPage:
 
                     # Custom clone controls
                     with gr.Group(visible=False) as clone_group:
-                        gr.Markdown("Upload reference audio (**24kHz mono WAV or MP3**) and its transcript:")
+                        names_upper = " or ".join(m.name for m in Format)
+                        exts_str = ", ".join(Format.extensions())
+                        gr.Markdown(f"Upload reference audio (**24kHz mono {names_upper}**) and its transcript:")
                         clone_audio = gr.Audio(
-                            label="Reference Voice Audio (.wav, .mp3)",
+                            label=f"Reference Voice Audio ({exts_str})",
                             type="filepath",
                         )
                         clone_text = gr.Textbox(

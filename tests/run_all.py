@@ -29,6 +29,11 @@ from tests.test_gradio_page import (
     test_gradio_page_config_helpers,
     test_table_printing,
 )
+from tests.test_sample import (
+    test_sampler_args,
+    test_sampler_list_commands,
+    test_sampler_run_execution,
+)
 
 ALL_TESTS = [
     ("Enums", test_enums),
@@ -42,6 +47,9 @@ ALL_TESTS = [
     ("VoiceMaker CLI & Instance Fields", test_voice_maker_args),
     ("VoiceMaker --range-only Execution & Join", test_voice_maker_range_only_run),
     ("VoiceMaker MP3 / Both Output Formats", test_voice_maker_format_options_run),
+    ("Sampler CLI & Instance Fields", test_sampler_args),
+    ("Sampler List Commands", test_sampler_list_commands),
+    ("Sampler Run Execution", test_sampler_run_execution),
     ("Strict Config Enforcement", test_generate_audio_strict_config),
     ("GradioPage Config Helpers", test_gradio_page_config_helpers),
     ("Table Printing", test_table_printing),

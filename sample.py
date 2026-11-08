@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
 import torch
@@ -13,18 +14,161 @@ from valle.models import get_model
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from utils import AttributeDict
 from nikud_converter import convert_nikud_text
-from config import SpeakerStore, CheckpointStore
+from config import SpeakerStore, CheckpointStore, Format
+
+__all__ = ["Sampler", "SamplerParser"]
+
+
+class SamplerParser(argparse.ArgumentParser):
+    """Command line argument parser for Sampler."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(
+            description="HebTTS Speech Generator",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            **kwargs,
+        )
+        self.add_argument(
+            "--speaker-list",
+            action="store_true",
+            help="Display available speakers",
+        )
+        self.add_argument(
+            "--checkpoint-list",
+            action="store_true",
+            help="Display predefined checkpoints",
+        )
+        self.add_argument(
+            "--speaker",
+            type=str,
+            default="1",
+            help="Speaker name or number (default: 1)",
+        )
+        self.add_argument(
+            "--checkpoint",
+            type=str,
+            default="1",
+            help="Checkpoint number or path (default: 1 -> checkpoint.pt)",
+        )
+        self.add_argument(
+            "--input",
+            type=str,
+            default=None,
+            dest="input_file",
+            help="Input text file path (output will default to same directory and stem with .wav)",
+        )
+        self.add_argument(
+            "--text",
+            type=str,
+            default=None,
+            help="Hebrew text to synthesize",
+        )
+        self.add_argument(
+            "--clone-wav", "--clone-audio",
+            type=str,
+            default=None,
+            dest="clone_wav",
+            help="Reference audio file path for voice cloning (.wav, .mp3)",
+        )
+        self.add_argument(
+            "--clone-txt",
+            type=str,
+            default=None,
+            dest="clone_txt",
+            help="Reference text file path whose contents provide the clone transcript",
+        )
+        self.add_argument(
+            "--output",
+            type=str,
+            default=None,
+            help="Output audio file (default: same directory and stem as input file or sample.wav)",
+        )
+        self.add_argument(
+            "--format",
+            type=str,
+            choices=["wav", "mp3", "both"],
+            default=None,
+            help="Output audio format ('wav', 'mp3', or 'both')",
+        )
+        self.add_argument(
+            "--mp3",
+            action="store_true",
+            default=False,
+            help="Shortcut flag to output audio as MP3",
+        )
+        self.add_argument(
+            "--top-k",
+            type=int,
+            default=50,
+            help="Top-k sampling parameter (default: 50)",
+        )
+        self.add_argument(
+            "--temperature",
+            type=float,
+            default=1.0,
+            help="Sampling temperature (default: 1.0)",
+        )
+        self.add_argument(
+            "--mbd",
+            action="store_true",
+            help="Enable Multi-Band Diffusion vocoder",
+        )
+        self.add_argument(
+            "--nikud-converter",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Enable automatic phonetic Nikud / Ktiv-Male disambiguation (default: True)",
+        )
 
 
 class Sampler:
     DEFAULT_TOKENS_FILE  = "tokenizer/unique_words_tokens_all.k2symbols"
     DEFAULT_VOCAB_FILE   = "tokenizer/vocab.txt"
 
-    def __init__( self, tokens_file=DEFAULT_TOKENS_FILE, vocab_file=DEFAULT_VOCAB_FILE ):
-        self.speakers    = SpeakerStore()
-        self.checkpoints = CheckpointStore()
-        self.tokens_file = tokens_file
-        self.vocab_file  = vocab_file
+    def __init__(
+        self,
+        tokens_file: str = DEFAULT_TOKENS_FILE,
+        vocab_file: str = DEFAULT_VOCAB_FILE,
+        speaker: str = "1",
+        checkpoint: str = "1",
+        input_file: Optional[Union[str, Path]] = None,
+        text: Optional[str] = None,
+        clone_wav: Optional[str] = None,
+        clone_txt: Optional[str] = None,
+        output: Optional[Union[str, Path]] = None,
+        format: Optional[List[Format]] = None,
+        top_k: int = 50,
+        temperature: float = 1.0,
+        mbd: bool = False,
+        nikud_converter: bool = True,
+        speaker_list: bool = False,
+        checkpoint_list: bool = False,
+    ) -> None:
+        self.speakers: SpeakerStore = SpeakerStore()
+        self.checkpoints: CheckpointStore = CheckpointStore()
+        self.tokens_file: str = tokens_file
+        self.vocab_file: str = vocab_file
+        self.speaker: str = speaker
+        self.checkpoint: str = checkpoint
+        self.input_file: Optional[Union[str, Path]] = input_file
+        self.text: Optional[str] = text
+        self.clone_wav: Optional[str] = clone_wav
+        self.clone_txt: Optional[str] = clone_txt
+        self.output: Optional[Union[str, Path]] = output
+        if format is not None:
+            self.format: List[Format] = Format.normalize(format)
+        elif output is not None and str(output).lower().endswith(".mp3"):
+            self.format: List[Format] = [Format.MP3]
+        else:
+            self.format: List[Format] = [Format.WAV]
+        self.top_k: int = top_k
+        self.temperature: float = temperature
+        self.mbd: bool = mbd
+        self.nikud_converter: bool = nikud_converter
+        self.speaker_list: bool = speaker_list
+        self.checkpoint_list: bool = checkpoint_list
+
+    normalize_formats = Format.normalize
 
 
 
@@ -219,131 +363,87 @@ class Sampler:
                     segments.append(silence)
         return torch.cat(segments, dim=-1) if segments else torch.zeros((1, 0))
 
-    def create_parser(self):
-        parser = argparse.ArgumentParser(description="HebTTS Speech Generator")
-        parser.add_argument(
-            "--speaker-list",
-            action="store_true",
-            help="Display available speakers",
-        )
-        parser.add_argument(
-            "--checkpoint-list",
-            action="store_true",
-            help="Display predefined checkpoints",
-        )
-        parser.add_argument(
-            "--speaker",
-            type=str,
-            default="1",
-            help="Speaker name or number (default: 1)",
-        )
-        parser.add_argument(
-            "--checkpoint",
-            type=str,
-            default="1",
-            help="Checkpoint number or path (default: 1 -> checkpoint.pt)",
-        )
-        parser.add_argument(
-            "--input",
-            type=str,
-            default=None,
-            dest="input_file",
-            help="Input text file path (output will default to same directory and stem with .wav)",
-        )
-        parser.add_argument(
-            "--text",
-            type=str,
-            default=None,
-            help="Hebrew text to synthesize",
-        )
-        parser.add_argument(
-            "--clone-wav", "--clone-audio",
-            type=str,
-            default=None,
-            dest="clone_wav",
-            help="Reference audio file path for voice cloning (.wav, .mp3)",
-        )
-        parser.add_argument(
-            "--clone-txt",
-            type=str,
-            default=None,
-            dest="clone_txt",
-            help="Reference text file path whose contents provide the clone transcript",
-        )
-        parser.add_argument(
-            "--output",
-            type=str,
-            default=None,
-            help="Output audio file (default: same directory and stem as input file or sample.wav)",
-        )
-        parser.add_argument(
-            "--format",
-            type=str,
-            choices=["wav", "mp3"],
-            default=None,
-            help="Output audio format ('wav' or 'mp3')",
-        )
-        parser.add_argument(
-            "--mp3",
-            action="store_true",
-            default=False,
-            help="Shortcut flag to output audio as MP3",
-        )
-        parser.add_argument(
-            "--top-k",
-            type=int,
-            default=50,
-            help="Top-k sampling parameter (default: 50)",
-        )
-        parser.add_argument(
-            "--temperature",
-            type=float,
-            default=1.0,
-            help="Sampling temperature (default: 1.0)",
-        )
-        parser.add_argument(
-            "--mbd",
-            action="store_true",
-            help="Enable Multi-Band Diffusion vocoder",
-        )
-        parser.add_argument(
-            "--nikud-converter",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Enable automatic phonetic Nikud / Ktiv-Male disambiguation (default: True)",
-        )
-        return parser
+    def create_parser(self) -> SamplerParser:
+        """Creates and returns the command line argument parser for Sampler."""
+        return SamplerParser()
 
-    def run(self, args=None):
+    def parse_args(
+        self,
+        args: Optional[Union[argparse.Namespace, List[str]]] = None,
+    ) -> argparse.Namespace:
+        """Parses CLI arguments (or passed Namespace/list) and updates instance fields."""
+        parser = self.create_parser()
         if args is None:
-            args = self.create_parser().parse_args()
+            parsed = parser.parse_args()
         elif isinstance(args, list):
-            args = self.create_parser().parse_args(args)
+            parsed = parser.parse_args(args)
+        elif isinstance(args, argparse.Namespace):
+            parsed = args
+        else:
+            raise TypeError(f"Unsupported args type: {type(args)}")
+
+        self.speaker_list = bool(parsed.speaker_list)
+        self.checkpoint_list = bool(parsed.checkpoint_list)
+        self.speaker = parsed.speaker
+        self.checkpoint = parsed.checkpoint
+        self.input_file = parsed.input_file
+        self.text = parsed.text
+        self.clone_wav = parsed.clone_wav
+        self.clone_txt = parsed.clone_txt
+        self.output = parsed.output
+        # Handle format: List[Format]
+        mp3_flag = bool(getattr(parsed, "mp3", False))
+        parsed_format = getattr(parsed, "format", None)
+        if mp3_flag and (parsed_format is None or parsed_format == "wav"):
+            self.format = [Format.MP3]
+        elif parsed_format is not None:
+            self.format = Format.normalize(parsed_format)
+        elif parsed.output and str(parsed.output).lower().endswith(".mp3"):
+            self.format = [Format.MP3]
+        else:
+            self.format = [Format.WAV]
+        self.top_k = int(parsed.top_k)
+        self.temperature = float(parsed.temperature)
+        self.mbd = bool(parsed.mbd)
+        self.nikud_converter = bool(parsed.nikud_converter)
+
+        return parsed
+
+    def run(self, args: Optional[Union[argparse.Namespace, List[str]]] = None) -> Optional[Path]:
+        """Main execution workflow for single-sample speech synthesis."""
+        if (
+            args is not None
+            or (self.text is None and self.input_file is None and not self.speaker_list and not self.checkpoint_list)
+        ):
+            self.parse_args(args)
 
         speakers = self.speakers.list()
 
-        if args.speaker_list:
+        if self.speaker_list:
             self.print_speakers()
-            return
+            return None
 
-        if args.checkpoint_list:
+        if self.checkpoint_list:
             self.print_checkpoints()
-            return
+            return None
 
-        checkpoint_path = self.resolve_checkpoint(args.checkpoint)
-        speaker_id, speaker_data = self.resolve_speaker(args.speaker, speakers)
+        checkpoint_path = self.resolve_checkpoint(self.checkpoint)
+        if not self.clone_wav:
+            speaker_id, speaker_data = self.resolve_speaker(self.speaker, speakers)
+        else:
+            speaker_id, speaker_data = None, None
 
         # Resolve text input
         lines = None
 
         input_file_path = None
-        if args.input_file is not None:
-            input_file_path = Path(args.input_file)
+        if self.input_file is not None:
+            input_file_path = Path(self.input_file)
             if not input_file_path.exists():
-                print(f"Error: Input file '{args.input_file}' not found.")
+                print(f"Error: Input file '{self.input_file}' not found.")
                 sys.exit(1)
-        elif args.text is not None:
-            lines = [args.text.strip()]
+        elif self.text is not None:
+            lines = [self.text.strip()]
         elif os.path.exists("samples/sample.txt"):
             input_file_path = Path("samples/sample.txt")
 
@@ -354,41 +454,37 @@ class Sampler:
         if not lines:
             lines = ["שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית."]
 
-        # Resolve output path: if not explicitly specified, default to same directory and stem as input file
-        target_ext = ".mp3" if (getattr(args, "mp3", False) or getattr(args, "format", None) == "mp3") else ".wav"
-        if args.output is not None:
-            out_p = Path(args.output)
-            if out_p.is_dir() or str(args.output).endswith(("\\", "/")):
+        # Resolve output path base
+        if self.output is not None:
+            out_p = Path(self.output)
+            if out_p.is_dir() or str(self.output).endswith(("\\", "/")):
                 stem = input_file_path.stem if input_file_path is not None else "sample"
-                output_path = out_p / f"{stem}{target_ext}"
-            elif not out_p.suffix:
-                output_path = out_p.with_suffix(target_ext)
+                base_out = out_p / stem
+            elif out_p.suffix:
+                base_out = out_p.with_suffix("")
             else:
-                output_path = out_p
+                base_out = out_p
         elif input_file_path is not None:
-            output_path = input_file_path.with_suffix(target_ext)
+            base_out = input_file_path.with_suffix("")
         else:
-            output_path = Path(f"sample{target_ext}")
-
-        if not output_path.suffix:
-            output_path = output_path.with_suffix(target_ext)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+            base_out = Path("sample")
+        base_out.parent.mkdir(parents=True, exist_ok=True)
 
         # Resolve prompt audio and text
-        if args.clone_wav:
-            prompt_audio = args.clone_wav
+        if self.clone_wav:
+            prompt_audio = self.clone_wav
             if not os.path.exists(prompt_audio):
                 print(f"Error: Clone audio file '{prompt_audio}' not found.")
                 sys.exit(1)
 
-            if args.clone_txt:
-                if os.path.exists(args.clone_txt):
-                    with open(args.clone_txt, "r", encoding="utf-8") as f:
+            if self.clone_txt:
+                if os.path.exists(self.clone_txt):
+                    with open(self.clone_txt, "r", encoding="utf-8") as f:
                         prompt_text = f.read().strip()
-                elif "\n" in args.clone_txt or " " in args.clone_txt:
-                    prompt_text = args.clone_txt.strip()
+                elif "\n" in self.clone_txt or " " in self.clone_txt:
+                    prompt_text = self.clone_txt.strip()
                 else:
-                    print(f"Error: Clone text file '{args.clone_txt}' not found.")
+                    print(f"Error: Clone text file '{self.clone_txt}' not found.")
                     sys.exit(1)
             else:
                 auto_txt = Path(prompt_audio).with_suffix(".txt")
@@ -408,19 +504,19 @@ class Sampler:
         device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
 
         print(f"Selected Checkpoint: {checkpoint_path}")
-        if args.clone_wav:
+        if self.clone_wav:
             print(f"Clone Audio:         {prompt_audio}")
             print(f"Clone Text:          {prompt_text[:60]}{'...' if len(prompt_text) > 60 else ''}")
         else:
             print(f"Selected Speaker:    {speaker_id}")
         print(f"Device:              {device} ({device_name})")
-        if args.input_file:
-            print(f"Input File:          {args.input_file}")
+        if self.input_file:
+            print(f"Input File:          {self.input_file}")
         print("Loading model...")
 
         model, _ = self.load_model(checkpoint_path, device)
         text_collater = get_text_token_collater(self.tokens_file)
-        audio_tokenizer = AudioTokenizer(mbd=args.mbd)
+        audio_tokenizer = AudioTokenizer(mbd=self.mbd)
         alef_bert_tokenizer = AlefBERTRootTokenizer(vocab_file=self.vocab_file)
 
         # Encode prompt audio
@@ -437,15 +533,27 @@ class Sampler:
             audio_prompts=audio_prompts,
             prompt_text=prompt_text,
             device=device,
-            top_k=args.top_k,
-            temperature=args.temperature,
-            mbd=args.mbd,
-            nikud_converter=args.nikud_converter,
+            top_k=self.top_k,
+            temperature=self.temperature,
+            mbd=self.mbd,
+            nikud_converter=self.nikud_converter,
         )
 
-        torchaudio.save(str(output_path), samples, 24000)
-        print(f"Saved generated audio to: {output_path}")
-        return output_path
+        saved_path: Optional[Path] = None
+        if Format.WAV in self.format:
+            wav_path = base_out.with_suffix(".wav")
+            torchaudio.save(str(wav_path), samples, 24000)
+            print(f"Saved generated audio (WAV) to: {wav_path}")
+            saved_path = wav_path
+
+        if Format.MP3 in self.format:
+            mp3_path = base_out.with_suffix(".mp3")
+            torchaudio.save(str(mp3_path), samples, 24000)
+            print(f"Saved generated audio (MP3) to: {mp3_path}")
+            if saved_path is None or (self.output and str(self.output).lower().endswith(".mp3")):
+                saved_path = mp3_path
+
+        return saved_path
 
 
 if __name__ == "__main__":

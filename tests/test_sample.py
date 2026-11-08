@@ -1,0 +1,162 @@
+import io
+import sys
+import tempfile
+from contextlib import redirect_stdout
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import torch
+
+# Ensure project root is in sys.path
+root_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
+import tests.setup_env  # noqa: F401
+
+from config import Format
+from sample import Sampler, SamplerParser
+
+
+def test_sampler_args():
+    # 1. Default constructor fields
+    s = Sampler()
+    assert s.tokens_file == Sampler.DEFAULT_TOKENS_FILE
+    assert s.vocab_file == Sampler.DEFAULT_VOCAB_FILE
+    assert s.speaker == "1"
+    assert s.checkpoint == "1"
+    assert s.input_file is None
+    assert s.text is None
+    assert s.clone_wav is None
+    assert s.clone_txt is None
+    assert s.output is None
+    assert s.format == [Format.WAV]
+    assert s.top_k == 50
+    assert s.temperature == 1.0
+    assert s.mbd is False
+    assert s.nikud_converter is True
+    assert s.speaker_list is False
+    assert s.checkpoint_list is False
+    assert isinstance(s.create_parser(), SamplerParser)
+
+    # 2. parse_args with list
+    parsed = s.parse_args([
+        "--speaker", "osim",
+        "--checkpoint", "1",
+        "--text", "שלום עולם",
+        "--clone-audio", "ref.mp3",
+        "--clone-txt", "ref.txt",
+        "--output", "custom_out.mp3",
+        "--format", "mp3",
+        "--top-k", "40",
+        "--temperature", "0.7",
+        "--mbd",
+        "--no-nikud-converter",
+    ])
+    assert parsed.speaker == "osim"
+    assert s.speaker == "osim"
+    assert s.checkpoint == "1"
+    assert s.text == "שלום עולם"
+    assert s.clone_wav == "ref.mp3"
+    assert s.clone_txt == "ref.txt"
+    assert s.output == "custom_out.mp3"
+    assert s.format == [Format.MP3]
+    assert s.top_k == 40
+    assert s.temperature == 0.7
+    assert s.mbd is True
+    assert s.nikud_converter is False
+
+    # 3. Direct constructor initialization with fields
+    s2 = Sampler(
+        speaker="osim",
+        checkpoint="2",
+        text="בדיקה ישירה",
+        output="out.wav",
+        format=[Format.MP3],
+        top_k=25,
+        temperature=0.9,
+        mbd=True,
+        nikud_converter=False,
+    )
+    assert s2.speaker == "osim"
+    assert s2.checkpoint == "2"
+    assert s2.text == "בדיקה ישירה"
+    assert s2.output == "out.wav"
+    assert s2.format == [Format.MP3]
+    assert s2.top_k == 25
+    assert s2.temperature == 0.9
+    assert s2.mbd is True
+    assert s2.nikud_converter is False
+
+    # 4. parse_args with existing Namespace
+    parser = SamplerParser()
+    ns = parser.parse_args(["--speaker", "1", "--text", "בדיקת Namespace"])
+    s2.parse_args(ns)
+    assert s2.speaker == "1"
+    assert s2.text == "בדיקת Namespace"
+
+    # 5. --mp3 shortcut flag sets format to [Format.MP3]
+    s.parse_args(["--mp3"])
+    assert s.format == [Format.MP3]
+
+    # 6. --format both sets format to [Format.WAV, Format.MP3]
+    s.parse_args(["--format", "both"])
+    assert s.format == [Format.WAV, Format.MP3]
+
+    print("[PASS] Sampler CLI, instance fields, and parse_args verified.")
+
+
+def test_sampler_list_commands():
+    s_spk = Sampler(speaker_list=True)
+    f = io.StringIO()
+    with redirect_stdout(f):
+        res = s_spk.run()
+    assert res is None
+    assert "Available speakers:" in f.getvalue()
+
+    s_cp = Sampler(checkpoint_list=True)
+    f = io.StringIO()
+    with redirect_stdout(f):
+        res = s_cp.run()
+    assert res is None
+    assert "Available checkpoints:" in f.getvalue()
+
+    print("[PASS] Sampler --speaker-list and --checkpoint-list execution verified.")
+
+
+def test_sampler_run_execution():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        out_wav = tmp_path / "test_out.wav"
+        out_mp3 = tmp_path / "test_out.mp3"
+
+        s = Sampler(speaker="1", text="שלום עולם", output=out_wav)
+        s.load_model = MagicMock(return_value=(MagicMock(), "mock_tokens"))
+        s.synthesize = MagicMock(return_value=torch.zeros((1, 24000)))
+
+        with patch("sample.tokenize_audio", return_value=[[torch.zeros((1, 8, 10))]]), \
+             patch("sample.AudioTokenizer"):
+            # 1. Run with instance fields (WAV output)
+            result = s.run()
+            assert result == out_wav
+            assert out_wav.exists()
+
+            # 2. Run with MP3 format via parse_args in run()
+            result_mp3 = s.run(["--text", "שלום שוב", "--format", "mp3", "--output", str(out_mp3)])
+            assert result_mp3 == out_mp3
+            assert out_mp3.exists()
+
+            # 3. Run with both formats via --format both
+            both_base = tmp_path / "both_out"
+            s.run(["--text", "שניהם", "--format", "both", "--output", str(both_base)])
+            assert (tmp_path / "both_out.wav").exists()
+            assert (tmp_path / "both_out.mp3").exists()
+
+    print("[PASS] Sampler.run() execution without args dependency verified.")
+
+
+if __name__ == "__main__":
+    test_sampler_args()
+    test_sampler_list_commands()
+    test_sampler_run_execution()
+    print("\n🎉 ALL TESTS IN tests/test_sample.py PASSED SUCCESSFULLY!")
