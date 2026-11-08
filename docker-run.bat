@@ -6,7 +6,7 @@ if not exist "%SCRIPT_DIR%.cache\torch\hub\checkpoints" (
 )
 
 if "%~1"=="" (
-    docker run --gpus all --rm -it -v "%SCRIPT_DIR%:/app" -v "%SCRIPT_DIR%.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" -p 7860:7860 hebtts:latest python sample.py
+    docker run --gpus all --rm -it -v "%SCRIPT_DIR%:/app" -v "%SCRIPT_DIR%.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" -p 7860:7860 hebtts:latest python GradioPage.py
 ) else (
-    docker run --gpus all --rm -it -v "%SCRIPT_DIR%:/app" -v "%SCRIPT_DIR%.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" -p 7860:7860 hebtts:latest %*
+    docker run --gpus all --rm -it -v "%SCRIPT_DIR%:/app" -v "%SCRIPT_DIR%.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" hebtts:latest %*
 )

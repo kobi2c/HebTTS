@@ -106,18 +106,136 @@ def format_srt_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
+class VoiceMakerParser(argparse.ArgumentParser):
+    """Command-line argument parser for HebTTS Batch Voice Generator."""
+
+    def __init__(self, **kwargs):
+        super().__init__(
+            description="HebTTS Batch Voice Generator: Synthesize speech and subtitles from .mki script files",
+            **kwargs,
+        )
+        self.add_argument(
+            "-i", "--input",
+            type=str,
+            required=True,
+            help="Path to .mki script file (required)",
+        )
+        self.add_argument(
+            "-c", "--base_config",
+            type=str,
+            default=None,
+            help="Path to base JSON settings file (exported from GradioPage)",
+        )
+        self.add_argument(
+            "-o", "--output_dir",
+            type=str,
+            default=None,
+            help="Output directory (defaults to <input_dir>/out/)",
+        )
+        self.add_argument(
+            "--max_len",
+            type=int,
+            default=100,
+            help="Maximum character length per text chunk before splitting (default: 100)",
+        )
+        self.add_argument(
+            "--fade_ms",
+            type=float,
+            default=20.0,
+            help="Micro fade-in and fade-out duration in milliseconds to prevent boundary clicks (default: 20.0)",
+        )
+        self.add_argument(
+            "--trim_noise",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Trim leading vocoder startup noise packet before speech onset (default: True, use --no-trim_noise to disable)",
+        )
+        self.add_argument(
+            "--pad_ms",
+            type=float,
+            default=30.0,
+            help="Pre-speech safety silence padding in milliseconds to keep before speech onset (default: 30.0)",
+        )
+        self.add_argument(
+            "--clean_existing",
+            action="store_true",
+            default=False,
+            help="Clean and re-save existing chunk WAV files on disk using noise trimming and fading without re-synthesizing, then rebuild merged WAV and SRT",
+        )
+        self.add_argument(
+            "--range",
+            type=str,
+            default=None,
+            help="Generate only specified chunk index ranges (e.g. '1-5', '@-10', '5-@', 'x-10', '5-x', '3,7-9'). Outside chunks are re-used from disk.",
+        )
+
+
 class VoiceMaker:
     """
     Batch speech generator for .mki script files with dynamic settings overrides.
     Caches model weights and reference audio prompts for optimal GPU throughput.
     """
-    def __init__(self, page: Optional[GradioPage] = None, sampler: Optional[Sampler] = None) -> None:
+    def __init__(
+        self,
+        page: Optional[GradioPage] = None,
+        sampler: Optional[Sampler] = None,
+        input: Optional[Union[str, Path]] = None,
+        base_config: Optional[str] = None,
+        output_dir: Optional[Union[str, Path]] = None,
+        max_len: int = 100,
+        fade_ms: float = 20.0,
+        trim_noise: bool = True,
+        pad_ms: float = 30.0,
+        clean_existing: bool = False,
+        range: Optional[str] = None,
+    ) -> None:
         self.page: GradioPage = page or GradioPage()
         self.sampler: Sampler = sampler or self.page.sampler
+        self.input: Optional[Union[str, Path]] = input
+        self.base_config: Optional[str] = base_config
+        self.output_dir: Optional[Union[str, Path]] = output_dir
+        self.max_len: int = max_len
+        self.fade_ms: float = fade_ms
+        self.trim_noise: bool = trim_noise
+        self.pad_ms: float = pad_ms
+        self.clean_existing: bool = clean_existing
+        self.range: Optional[str] = range
         # Cache reference audio embeddings per prompt
         self._cached_prompt_audio: Optional[str] = None
         self._cached_audio_prompts: Optional[torch.Tensor] = None
         self._cached_prompt_text: Optional[str] = None
+
+    def create_parser(self) -> VoiceMakerParser:
+        """Creates and returns the command line argument parser for VoiceMaker."""
+        return VoiceMakerParser()
+
+    def parse_args(
+        self,
+        args: Optional[Union[argparse.Namespace, List[str]]] = None,
+    ) -> argparse.Namespace:
+        """Parses CLI arguments (or passed Namespace/list) and updates instance fields."""
+        parser = self.create_parser()
+        if args is None:
+            parsed = parser.parse_args()
+        elif isinstance(args, list):
+            parsed = parser.parse_args(args)
+        elif isinstance(args, argparse.Namespace):
+            parsed = args
+        else:
+            raise TypeError(f"Unsupported args type: {type(args)}")
+
+        self.input = parsed.input
+        self.base_config = parsed.base_config
+        self.output_dir = parsed.output_dir
+        self.max_len = parsed.max_len
+        self.fade_ms = parsed.fade_ms
+        self.trim_noise = parsed.trim_noise
+        self.pad_ms = parsed.pad_ms
+        self.clean_existing = parsed.clean_existing
+        self.range = parsed.range
+        return parsed
+
+
     def resolve_output_dir(self, input_path: Union[str, Path], custom_out: Optional[str] = None) -> Path:
         """Defaults output directory to <input_dir>/out/ if not explicitly given."""
         in_p = Path(input_path).resolve()
@@ -270,21 +388,22 @@ class VoiceMaker:
         return audio_np
     def run(self, args: Optional[Union[argparse.Namespace, List[str]]] = None) -> Path:
         """Main execution workflow for processing .mki files."""
-        if args is None:
-            args = self.create_parser().parse_args()
-        elif isinstance(args, list):
-            args = self.create_parser().parse_args(args)
-        input_path = Path(args.input).resolve()
+        if args is not None or self.input is None:
+            self.parse_args(args)
+
+        if not self.input:
+            raise ValueError("Input .mki file path must be specified.")
+
+        input_path = Path(self.input).resolve()
         basename = input_path.stem
-        output_dir = self.resolve_output_dir(input_path, args.output_dir)
+        output_dir = self.resolve_output_dir(input_path, self.output_dir)
         print(f"\n{'='*70}")
-        print(f"🎙️  HebTTS Batch Voice Generator: {input_path.name}"
-)
+        print(f"🎙️  HebTTS Batch Voice Generator: {input_path.name}")
         print(f"Output Directory: {output_dir}")
         print(f"Device:           {self.page.device} ({self.page.device_name})")
         print(f"{'='*70}\n")
         # 1. Load base configuration and read lines
-        base_config = self.load_base_config(args.base_config)
+        base_config = self.load_base_config(self.base_config)
         lines = self.read_mki_file(input_path)
         blocks = self.parse_mki(lines, base_config)
         if not blocks:
@@ -293,22 +412,22 @@ class VoiceMaker:
         # 2. Deconstruct into manageable text chunks
         all_chunks: List[Tuple[Config, str]] = []
         for block_config, block_text in blocks:
-            parts = split_text(block_text, max_len=args.max_len)
+            parts = split_text(block_text, max_len=self.max_len)
             for part in parts:
                 all_chunks.append((block_config, part))
         print(f"Found {len(blocks)} configuration blocks -> {len(all_chunks)} text chunks to synthesize.")
 
         # Parse optional range filter
         active_range: Optional[RangeList] = None
-        if getattr(args, "range", None):
-            active_range = RangeList.parse(args.range).normalize(total_count=len(all_chunks))
+        if self.range:
+            active_range = RangeList.parse(self.range).normalize(last=len(all_chunks))
             indices = active_range.indices(len(all_chunks))
             print(f"[Range] Filter active: {active_range} ({len(indices)} of {len(all_chunks)} chunks selected).")
 
-        fade_ms = float(getattr(args, "fade_ms", 20.0))
-        trim_noise = bool(getattr(args, "trim_noise", True))
-        pad_ms = float(getattr(args, "pad_ms", 30.0))
-        clean_existing = bool(getattr(args, "clean_existing", False))
+        fade_ms = float(self.fade_ms)
+        trim_noise = bool(self.trim_noise)
+        pad_ms = float(self.pad_ms)
+        clean_existing = bool(self.clean_existing)
 
         all_wavs: List[np.ndarray] = []
         srt_entries: List[Tuple[float, float, str]] = []
@@ -397,65 +516,7 @@ class VoiceMaker:
             print(f"[+] Saved subtitles:    {final_srt_path}")
         print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")
         return output_dir
-    def create_parser(self) -> argparse.ArgumentParser:
-        parser = argparse.ArgumentParser(
-            description="HebTTS Batch Voice Generator: Synthesize speech and subtitles from .mki script files"
-        )
-        parser.add_argument(
-            "-i", "--input",
-            type=str,
-            required=True,
-            help="Path to .mki script file (required)",
-        )
-        parser.add_argument(
-            "-c", "--base_config",
-            type=str,
-            default=None,
-            help="Path to base JSON settings file (exported from GradioPage)",
-        )
-        parser.add_argument(
-            "-o", "--output_dir",
-            type=str,
-            default=None,
-            help="Output directory (defaults to <input_dir>/out/)",
-        )
-        parser.add_argument(
-            "--max_len",
-            type=int,
-            default=100,
-            help="Maximum character length per text chunk before splitting (default: 100)",
-        )
-        parser.add_argument(
-            "--fade_ms",
-            type=float,
-            default=20.0,
-            help="Micro fade-in and fade-out duration in milliseconds to prevent boundary clicks (default: 20.0)",
-        )
-       
-        parser.add_argument(
-            "--trim_noise",
-            action=argparse.BooleanOptionalAction,
-            default=True,
-            help="Trim leading vocoder startup noise packet before speech onset (default: True, use --no-trim_noise to disable)",
-        )
-        parser.add_argument(
-            "--pad_ms",
-            type=float,
-            default=30.0,
-            help="Pre-speech safety silence padding in milliseconds to keep before speech onset (default: 30.0)",
-        )
-        parser.add_argument(
-            "--clean_existing",
-            action="store_true",
-            default=False,
-            help="Clean and re-save existing chunk WAV files on disk using noise trimming and fading without re-synthesizing, then rebuild merged WAV and SRT",
-        )
-        parser.add_argument(
-            "--range",
-            type=str,
-            default=None,
-            help="Generate only specified chunk index ranges (e.g. '1-5', '@-10', '5-@', 'x-10', '5-x', '3,7-9'). Outside chunks are re-used from disk.",
-        )
-        return parser
+
+
 if __name__ == "__main__":
     VoiceMaker().run()

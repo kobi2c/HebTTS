@@ -9,12 +9,11 @@ if [ $# -eq 0 ]; then
         -v "${SCRIPT_DIR}:/app" \
         -v "${SCRIPT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
         -p 7860:7860 \
-        hebtts:latest python sample.py
+        hebtts:latest python GradioPage.py
 else
     docker run --gpus all --rm -it \
         -v "${SCRIPT_DIR}:/app" \
         -v "${SCRIPT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
-        -p 7860:7860 \
         hebtts:latest "$@"
 fi
 
