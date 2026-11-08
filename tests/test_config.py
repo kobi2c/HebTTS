@@ -15,6 +15,8 @@ for mod in [
     "gradio",
     "torch",
     "torchaudio",
+    "librosa",
+    "openvoice",
     "valle",
     "valle.data",
     "valle.data.collation",
@@ -38,6 +40,11 @@ from config import (
     SpeakerData,
     Checkpoint,
     CheckpointStore,
+    NoiseFix,
+    VoiceConverter,
+    convert_chunk_voice,
+    SpeakerSame,
+    speaker_same,
 )
 
 def test_enums():
@@ -531,6 +538,276 @@ def test_range_and_range_list():
     assert args.range == "1-5, 8-@"
     print("[PASS] Range and RangeList verified.")
 
+def test_noise_fix():
+    import numpy as np
+    from config import NoiseFix, apply_fade, trim_leading_noise
+
+    # 1. apply_fade
+    empty = np.array([], dtype=np.float32)
+    assert len(apply_fade(empty)) == 0
+
+    sig = np.ones(1000, dtype=np.float32)
+    unfaded = apply_fade(sig, fade_in_ms=0, fade_out_ms=0)
+    assert np.allclose(unfaded, sig)
+
+    faded = apply_fade(sig, sr=1000, fade_in_ms=100, fade_out_ms=100)
+    assert faded[0] < 0.05
+    assert faded[-1] < 0.05
+    assert faded[500] == 1.0  # Center untouched
+
+    # 2. trim_leading_noise
+    assert len(trim_leading_noise(empty)) == 0
+
+    silence = np.zeros(24000, dtype=np.float32)
+    assert len(trim_leading_noise(silence, sr=24000)) == len(silence)
+
+    sr = 24000
+    noise = np.random.uniform(-0.06, 0.06, int(sr * 0.2)).astype(np.float32)
+    gap = np.zeros(int(sr * 0.05), dtype=np.float32)
+    speech = np.sin(2 * np.pi * 440 * np.linspace(0, 1, int(sr * 0.5))).astype(np.float32) * 0.8
+    sample_audio = np.concatenate([noise, gap, speech])
+
+    trimmed = trim_leading_noise(sample_audio, sr=sr, pad_ms=30.0)
+    assert len(trimmed) < len(sample_audio)
+    assert len(trimmed) >= len(speech)
+
+    assert NoiseFix.fade is apply_fade
+    assert NoiseFix.trim is trim_leading_noise
+    print("[PASS] NoiseFix (fade & trim) verified.")
+
+def test_voice_converter():
+    import numpy as np
+    from config import VoiceConverter
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_p = Path(tmp_dir)
+        ckpt_dir = tmp_p / "checkpoints"
+        vc = VoiceConverter(checkpoint_dir=ckpt_dir, device="cpu")
+        assert vc.checkpoint_dir == ckpt_dir
+        assert vc.device is not None
+
+        # Test ensure_checkpoints with mock urlretrieve
+        with patch("urllib.request.urlretrieve") as mock_retrieve:
+            def fake_retrieve(url, path):
+                Path(path).write_text("mock")
+            mock_retrieve.side_effect = fake_retrieve
+            c_path, m_path = vc.ensure_checkpoints()
+            assert c_path.exists()
+            assert m_path.exists()
+            assert mock_retrieve.call_count == 2
+
+            mock_retrieve.reset_mock()
+            vc.ensure_checkpoints()
+            assert mock_retrieve.call_count == 0
+
+        # Test convert validations
+        src_wav = tmp_p / "source.wav"
+        tgt_wav = tmp_p / "target.wav"
+        out_wav = tmp_p / "output.wav"
+
+        try:
+            vc.convert(src_wav, tgt_wav, out_wav)
+            assert False, "Expected FileNotFoundError for missing source"
+        except FileNotFoundError:
+            pass
+
+        src_wav.write_text("fake_src")
+        try:
+            vc.convert(src_wav, tgt_wav, out_wav)
+            assert False, "Expected FileNotFoundError for missing target"
+        except FileNotFoundError:
+            pass
+        tgt_wav.write_text("fake_tgt")
+
+        # Mock ToneColorConverter inside vc._converter
+        mock_model = MagicMock()
+        mock_model.hps.data.sampling_rate = 24000
+        mock_model.extract_se.return_value = "mock_se"
+        mock_model.convert.return_value = np.zeros(24000, dtype=np.float32)
+        vc._converter = mock_model
+
+        with patch("soundfile.write") as mock_sf_write:
+            res_path = vc.convert(
+                source_audio_path=src_wav,
+                target_speaker_path=tgt_wav,
+                output_path=out_wav,
+                target_sr=24000,
+            )
+            assert res_path == out_wav
+            assert mock_model.extract_se.call_count == 2
+            mock_model.convert.assert_called_once()
+            mock_sf_write.assert_called_once()
+            assert str(tgt_wav.resolve()) in vc._cached_se
+
+            # Second convert with same target: target embedding should be cached
+            mock_model.extract_se.reset_mock()
+            vc.convert(src_wav, tgt_wav, out_wav, target_sr=24000)
+            assert mock_model.extract_se.call_count == 1
+
+    print("[PASS] VoiceConverter (ensure_checkpoints, convert, caching) verified.")
+
+def test_make_voice_voice_converter_integration():
+    import numpy as np
+    from make_voice import VoiceMaker
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_p = Path(tmp_dir)
+        mki_file = tmp_p / "test.mki"
+        mki_file.write_text("שלום עולם.\nזהו משפט שני.", encoding="utf-8")
+
+        vm = VoiceMaker()
+        parser = vm.create_parser()
+
+        # 1. Test argument parser flags
+        args = parser.parse_args([
+            "-i", str(mki_file),
+            "--convert_chunk", "2",
+            "--source", str(tmp_p / "voice.wav"),
+        ])
+        assert args.convert_chunk == 2
+        assert args.source == str(tmp_p / "voice.wav")
+
+        # 2. Argument validation: --source without --convert_chunk
+        try:
+            bad_args = parser.parse_args(["-i", str(mki_file), "--source", "foo.wav"])
+            vm.run(bad_args)
+            assert False, "Expected ValueError for --source without --convert_chunk"
+        except ValueError as e:
+            assert "--convert_chunk" in str(e)
+
+        # 3. Argument validation: --convert_chunk out of range
+        try:
+            bad_args2 = parser.parse_args(["-i", str(mki_file), "--convert_chunk", "99"])
+            vm.run(bad_args2)
+            assert False, "Expected ValueError for --convert_chunk out of range"
+        except ValueError as e:
+            assert "out of range" in str(e)
+
+        # 4. Mock execution of voice conversion workflow
+        out_dir = tmp_p / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        c1_wav = out_dir / "test_001.wav"
+        c2_wav = out_dir / "test_002.wav"
+        guide_wav = tmp_p / "my_guide.wav"
+
+        fake_audio = np.zeros(24000, dtype=np.float32)
+        with patch("soundfile.read", return_value=(fake_audio, 24000)), \
+             patch("soundfile.write") as mock_sf_write:
+
+            guide_wav.write_text("guide")
+            c1_wav.write_text("c1")
+            c2_wav.write_text("original_c2")
+
+            mock_converter = MagicMock()
+            mock_converter.convert.return_value = c2_wav
+            vm._converter = mock_converter
+
+            run_args = parser.parse_args([
+                "-i", str(mki_file),
+                "-o", str(out_dir),
+                "--convert_chunk", "2",
+                "--source", str(guide_wav),
+            ])
+
+            vm.run(run_args)
+
+            input_wav = out_dir / "test_002.input.wav"
+            assert input_wav.exists()
+
+            orig_wav = out_dir / "test_002.orig.wav"
+            assert orig_wav.exists()
+            assert orig_wav.read_text() == "original_c2"
+
+            mock_converter.convert.assert_called_once()
+            call_kwargs = mock_converter.convert.call_args[1]
+            assert Path(call_kwargs["source_audio_path"]).name == "test_002.input.wav"
+            assert Path(call_kwargs["output_path"]).name == "test_002.wav"
+
+            assert (out_dir / "test.srt").exists()
+
+            # Test --target_speaker argument
+            mock_converter.convert.reset_mock()
+            custom_spk_wav = tmp_p / "custom_spk.wav"
+            custom_spk_wav.write_text("custom")
+            run_args2 = parser.parse_args([
+                "-i", str(mki_file),
+                "-o", str(out_dir),
+                "--convert_chunk", "2",
+                "--source", str(guide_wav),
+                "--target_speaker", str(custom_spk_wav),
+            ])
+            vm.run(run_args2)
+            mock_converter.convert.assert_called_once()
+            call_kwargs2 = mock_converter.convert.call_args[1]
+            assert Path(call_kwargs2["target_speaker_path"]).name == "custom_spk.wav"
+
+    print("[PASS] make_voice voice conversion integration verified.")
+
+def test_speaker_same():
+    import numpy as np
+    from config import SpeakerSame, speaker_same
+    import speaker_same as speaker_same_cli
+
+    # 1. Test calculation of certainty
+    assert SpeakerSame.calculate_certainty(1.0) == 100.0
+    assert SpeakerSame.calculate_certainty(0.85) >= 85.0
+    assert 45.0 <= SpeakerSame.calculate_certainty(0.76) <= 55.0
+    assert SpeakerSame.calculate_certainty(0.64) < 10.0
+
+    # 2. Test SpeakerSame instance with mocks
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_p = Path(tmp_dir)
+        ckpt_path = tmp_p / "pretrained.pt"
+        verifier = SpeakerSame(weights_path=ckpt_path, device="cpu")
+
+        # Mock download
+        with patch("urllib.request.urlretrieve") as mock_dl:
+            def fake_dl(url, dest):
+                Path(dest).write_text("dummy_weights")
+            mock_dl.side_effect = fake_dl
+            p = verifier.ensure_checkpoint()
+            assert p.exists()
+            assert mock_dl.call_count == 1
+
+        unit_vec1 = np.ones(256, dtype=np.float32) / np.sqrt(256)
+        unit_vec2 = np.zeros(256, dtype=np.float32)
+        unit_vec2[0] = 1.0
+
+        wav1 = tmp_p / "wav1.wav"
+        wav2 = tmp_p / "wav2.wav"
+        wav1.write_text("fake1")
+        wav2.write_text("fake2")
+
+        with patch.object(verifier, "load_audio", return_value=np.zeros(16000)), \
+             patch.object(verifier, "wav_to_mel", return_value=np.zeros((160, 40))):
+
+            # Case A: Same embedding
+            with patch.object(verifier, "embed_audio", return_value=unit_vec1):
+                res_same = verifier.compare(wav1, wav2, threshold=95.0)
+                assert res_same["is_same"] is True
+                assert res_same["certainty"] > 99.0
+                assert res_same["cosine_similarity"] == 1.0
+
+            # Case B: Low similarity embedding
+            def mock_embed(audio_path):
+                return unit_vec1 if "wav1" in str(audio_path) else unit_vec2
+
+            with patch.object(verifier, "embed_audio", side_effect=mock_embed):
+                res_diff = verifier.compare(wav1, wav2, threshold=95.0)
+                assert res_diff["is_same"] is False
+                assert res_diff["certainty"] < 50.0
+
+        # 3. Test CLI parser
+        parser = speaker_same_cli.create_parser()
+        args = parser.parse_args(["spk.wav", "test.wav", "--threshold", "90.0", "--json"])
+        assert args.speaker_wav == "spk.wav"
+        assert args.test_wav == "test.wav"
+        assert args.threshold == 90.0
+        assert args.json is True
+
+    print("[PASS] SpeakerSame and speaker_same CLI verified.")
+
 if __name__ == "__main__":
     test_enums()
     test_config_defaults()
@@ -543,4 +820,8 @@ if __name__ == "__main__":
     test_checkpoint_data()
     test_table_printing()
     test_range_and_range_list()
+    test_noise_fix()
+    test_voice_converter()
+    test_make_voice_voice_converter_integration()
+    test_speaker_same()
     print("\n🎉 ALL TESTS IN tests/test_config.py PASSED SUCCESSFULLY!")

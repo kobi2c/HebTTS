@@ -3,6 +3,7 @@ import json
 import os
 import re
 import random
+import shutil
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -21,6 +22,8 @@ from config import (
     Range,
     RangeList,
     NoiseFix,
+    VoiceConverter,
+    convert_chunk_voice,
     audio_to_base64,
     base64_to_audio,
 )
@@ -118,6 +121,19 @@ class VoiceMaker:
         self._cached_prompt_audio: Optional[str] = None
         self._cached_audio_prompts: Optional[torch.Tensor] = None
         self._cached_prompt_text: Optional[str] = None
+        self._converter: Optional[Any] = None
+
+    @property
+    def converter(self):
+        """Lazy loads the VoiceConverter instance."""
+        if self._converter is None:
+            from config import VoiceConverter
+            if VoiceConverter is None:
+                raise ImportError(
+                    "VoiceConverter could not be loaded. Please ensure required dependencies are installed."
+                )
+            self._converter = VoiceConverter(device=self.page.device)
+        return self._converter
     def resolve_output_dir(self, input_path: Union[str, Path], custom_out: Optional[str] = None) -> Path:
         """Defaults output directory to <input_dir>/out/ if not explicitly given."""
         in_p = Path(input_path).resolve()
@@ -213,6 +229,54 @@ class VoiceMaker:
         else:
             raise ValueError(f"Invalid clone_audio provided in config: {clone_audio}")
         return prompt_audio, str(clone_text)
+    def resolve_target_speaker_path(
+        self,
+        chunk_idx: int,
+        output_dir: Path,
+        basename: str,
+        chunk_config: Config,
+        custom_target: Optional[str] = None,
+    ) -> str:
+        """
+        Resolves the reference audio file for voice conversion.
+        Prioritizes:
+        1. Explicit custom target (speaker name or file path from --target_speaker)
+        2. Existing generated chunks from the same speaker in output_dir (e.g. .orig.wav or adjacent chunk)
+           so that the converted voice matches the timbre 'as it was generated'.
+        3. Predefined speaker prompt from config.
+        """
+        if custom_target:
+            spk_data = SpeakerStore()
+            spk = spk_data.find(custom_target)
+            if spk:
+                return str(spk.full_path)
+            elif Path(custom_target).exists():
+                return str(Path(custom_target).resolve())
+            else:
+                raise FileNotFoundError(f"Target speaker '{custom_target}' not found.")
+
+        # 2. Check adjacent preceding chunks in reverse (e.g. chunk 002 for chunk 003)
+        # to ensure seamless acoustic continuity and direct timbre matching with the generated speaker.
+        for prev_idx in range(chunk_idx - 1, 0, -1):
+            prev_p = output_dir / f"{basename}_{prev_idx:03d}.wav"
+            if prev_p.exists() and prev_p.stat().st_size > 1000:
+                return str(prev_p.resolve())
+
+        # Check for original generated TTS chunk for this index
+        orig_p = output_dir / f"{basename}_{chunk_idx:03d}.orig.wav"
+        if orig_p.exists() and orig_p.stat().st_size > 1000:
+            return str(orig_p.resolve())
+
+        # Check subsequent chunks (e.g. 004, 005)
+        for next_idx in range(chunk_idx + 1, chunk_idx + 20):
+            next_p = output_dir / f"{basename}_{next_idx:03d}.wav"
+            if next_p.exists() and next_p.stat().st_size > 1000:
+                return str(next_p.resolve())
+
+        # 3. Fallback to predefined speaker prompt from config
+        spk_path, _ = self.resolve_speaker_prompt(chunk_config)
+        return spk_path
+
     def synthesize_chunk(
         self,
         chunk_text: str,
@@ -301,9 +365,40 @@ class VoiceMaker:
         # Parse optional range filter
         active_range: Optional[RangeList] = None
         if getattr(args, "range", None):
-            active_range = RangeList.parse(args.range).normalize(total_count=len(all_chunks))
+            active_range = RangeList.parse(args.range).normalize(last=len(all_chunks))
             indices = active_range.indices(len(all_chunks))
             print(f"[Range] Filter active: {active_range} ({len(indices)} of {len(all_chunks)} chunks selected).")
+
+        # Handle voice conversion staging / chunk targeting
+        convert_chunk_idx: Optional[int] = getattr(args, "convert_chunk", None)
+        source_path: Optional[str] = getattr(args, "source", None)
+
+        if source_path and convert_chunk_idx is None:
+            raise ValueError("Argument --convert_chunk <INDEX> is required when specifying --source <FILE>.")
+
+        if convert_chunk_idx is not None:
+            if convert_chunk_idx < 1 or convert_chunk_idx > len(all_chunks):
+                raise ValueError(
+                    f"--convert_chunk index {convert_chunk_idx} is out of range (1..{len(all_chunks)})."
+                )
+
+            dest_input = output_dir / f"{basename}_{convert_chunk_idx:03d}.input.wav"
+            if source_path:
+                src_p = Path(source_path).resolve()
+                if not src_p.exists():
+                    raise FileNotFoundError(f"Source file not found: {src_p}")
+                shutil.copy2(src_p, dest_input)
+                print(f"[VoiceConverter] Staged source recording '{src_p.name}' -> '{dest_input.name}'")
+            elif not dest_input.exists():
+                raise FileNotFoundError(
+                    f"Source recording file not found: {dest_input}. "
+                    f"Please provide --source <path> or place the recording at {dest_input}."
+                )
+
+            # Limit generation/conversion to this single chunk unless --range was explicitly provided
+            if active_range is None:
+                active_range = RangeList([Range(convert_chunk_idx, convert_chunk_idx)])
+                print(f"[VoiceConverter] Targeted conversion for chunk {convert_chunk_idx:03d}; other existing chunks will be re-used.")
 
         fade_ms = float(getattr(args, "fade_ms", 20.0))
         trim_noise = bool(getattr(args, "trim_noise", True))
@@ -320,8 +415,43 @@ class VoiceMaker:
         for chunk_idx, (chunk_config, chunk_text) in enumerate(tqdm(all_chunks, desc=desc), start=1):
             chunk_wav_path = output_dir / f"{basename}_{chunk_idx:03d}.wav"
             chunk_txt_path = output_dir / f"{basename}_{chunk_idx:03d}.txt"
+            chunk_input_path = output_dir / f"{basename}_{chunk_idx:03d}.input.wav"
+            chunk_orig_path = output_dir / f"{basename}_{chunk_idx:03d}.orig.wav"
 
-            if clean_existing:
+            in_active_range = (active_range is None or chunk_idx in active_range)
+            is_convert_target = (convert_chunk_idx == chunk_idx) or (convert_chunk_idx is None and chunk_input_path.exists())
+
+            if is_convert_target and chunk_input_path.exists() and in_active_range:
+                if chunk_wav_path.exists() and not chunk_orig_path.exists():
+                    shutil.copy2(chunk_wav_path, chunk_orig_path)
+                    print(f"\n[VoiceConverter] Backed up original TTS chunk to {chunk_orig_path.name}")
+
+                target_speaker_path = self.resolve_target_speaker_path(
+                    chunk_idx, output_dir, basename, chunk_config, custom_target=getattr(args, "target_speaker", None)
+                )
+                print(f"\n[VoiceConverter] Converting chunk {chunk_idx:03d} using voice timbre of: {Path(target_speaker_path).name}")
+                self.converter.convert(
+                    source_audio_path=chunk_input_path,
+                    target_speaker_path=target_speaker_path,
+                    output_path=chunk_wav_path,
+                    target_sr=sample_rate,
+                    trim_noise=trim_noise,
+                    pad_ms=pad_ms,
+                    fade_ms=fade_ms,
+                )
+                with open(chunk_txt_path, "w", encoding="utf-8") as f:
+                    f.write(chunk_text)
+
+                audio_np, sr_disk = sf.read(str(chunk_wav_path), dtype="float32")
+                if clean_existing:
+                    if active_range is None or chunk_idx in active_range:
+                        if trim_noise:
+                            audio_np = NoiseFix.trim(audio_np, sr=sr_disk, pad_ms=pad_ms)
+                        if fade_ms > 0:
+                            audio_np = NoiseFix.fade(audio_np, sr=sr_disk, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
+                        sf.write(str(chunk_wav_path), audio_np, sr_disk)
+
+            elif clean_existing:
                 if chunk_wav_path.exists():
                     audio_np, sr_disk = sf.read(str(chunk_wav_path), dtype="float32")
                     if active_range is None or chunk_idx in active_range:
@@ -431,7 +561,7 @@ class VoiceMaker:
             default=20.0,
             help="Micro fade-in and fade-out duration in milliseconds to prevent boundary clicks (default: 20.0)",
         )
-       
+
         parser.add_argument(
             "--trim_noise",
             action=argparse.BooleanOptionalAction,
@@ -455,6 +585,24 @@ class VoiceMaker:
             type=str,
             default=None,
             help="Generate only specified chunk index ranges (e.g. '1-5', '@-10', '5-@', 'x-10', '5-x', '3,7-9'). Outside chunks are re-used from disk.",
+        )
+        parser.add_argument(
+            "--convert_chunk",
+            type=int,
+            default=None,
+            help="Chunk index to convert with tone color converter. Automatically limits processing to this chunk unless --range is specified.",
+        )
+        parser.add_argument(
+            "--source",
+            type=str,
+            default=None,
+            help="Path to source voice audio file (guide recording) to convert into the speaker's voice",
+        )
+        parser.add_argument(
+            "--target_speaker",
+            type=str,
+            default=None,
+            help="Target speaker name (e.g. 'geek', 'osim', 'shaul') or audio file path to copy timbre from during chunk conversion",
         )
         return parser
 if __name__ == "__main__":
