@@ -7,11 +7,12 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+import utils
 import numpy as np
 import soundfile as sf
 import torch
 import torchaudio
-import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
 from config import (
     Config,
     Format,

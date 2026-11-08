@@ -1,6 +1,6 @@
 # HebTTS Docker Usage
 
-Mounting `%CD%:/app` ensures that scripts and generated outputs sync with your host workspace. Mounting `%CD%/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints` ensures downloaded PyTorch / EnCodec model weights are cached persistently across container runs.
+Mounting `%CD%:/app` ensures that scripts and generated outputs sync with your host workspace. Mounting `%CD%/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints` and `%CD%/.cache/huggingface:/root/.cache/huggingface` ensures downloaded PyTorch / EnCodec and HuggingFace / Multi-Band Diffusion (MBD) weights are cached persistently across container runs.
 
 > [!TIP]
 > You can also use the included helper scripts **`docker-run.bat`** (Windows) or **`./docker-run.sh`** (Linux / macOS / WSL) to run any command with all GPU and volume settings preconfigured:

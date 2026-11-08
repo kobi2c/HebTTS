@@ -8,13 +8,12 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import utils
 import gradio as gr
 import numpy as np
 import soundfile as sf
 import torch
 import torchaudio
-
-import utils  # Soundfile audio IO fallback and suppress torchvision warning
 from config import (
     Config,
     Format,

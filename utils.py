@@ -1,11 +1,22 @@
+# Sets up soundfile audio IO fallback and suppresses warnings
+
+import logging
 import os
 import warnings
-import torch
-import torchaudio
-import soundfile as sf
+
+# Silence xformers C++/CUDA incompatibility warning (HebTTS does not use xformers C++ ops)
+logging.getLogger("xformers").setLevel(logging.ERROR)
 
 # Silence torchvision image extension warning since TTS does not use vision IO
 warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
+
+# Silence deprecated weight_norm and custom_fwd/bwd FutureWarnings from dependencies
+warnings.filterwarnings("ignore", category=FutureWarning, module=r".*weight_norm.*")
+warnings.filterwarnings("ignore", category=FutureWarning, module=r".*xformers.*")
+
+import torch
+import torchaudio
+import soundfile as sf
 
 
 def _soundfile_load(uri, *args, **kwargs):
@@ -38,6 +49,47 @@ try:
 except ImportError:
     torchaudio.load = _soundfile_load
     torchaudio.save = _soundfile_save
+
+
+# In PyTorch >= 2.6, torch.load defaults weights_only=True, which breaks legacy checkpoints
+# that store OmegaConf configs (e.g. audiocraft MBD checkpoints) unless weights_only=False.
+_orig_torch_load = torch.load
+
+
+def _torch_load(f, *args, **kwargs):
+    if "weights_only" not in kwargs or kwargs["weights_only"] is None:
+        kwargs["weights_only"] = False
+    return _orig_torch_load(f, *args, **kwargs)
+
+
+torch.load = _torch_load
+if hasattr(torch, "serialization") and hasattr(torch.serialization, "load"):
+    torch.serialization.load = _torch_load
+
+try:
+    import omegaconf
+    import omegaconf.base
+    import omegaconf.dictconfig
+    import omegaconf.listconfig
+    import omegaconf.nodes
+
+    if hasattr(torch, "serialization") and hasattr(torch.serialization, "add_safe_globals"):
+        torch.serialization.add_safe_globals([
+            omegaconf.dictconfig.DictConfig,
+            omegaconf.listconfig.ListConfig,
+            omegaconf.base.ContainerMetadata,
+            omegaconf.base.Node,
+            omegaconf.base.Metadata,
+            omegaconf.nodes.ValueNode,
+            omegaconf.nodes.AnyNode,
+            omegaconf.nodes.StringNode,
+            omegaconf.nodes.IntegerNode,
+            omegaconf.nodes.BooleanNode,
+            omegaconf.nodes.FloatNode,
+            omegaconf.nodes.EnumNode,
+        ])
+except (ImportError, AttributeError):
+    pass
 
 
 class AttributeDict(dict):

@@ -5,6 +5,7 @@ services:
     volumes:
       - .:/app
       - ./.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints
+      - ./.cache/huggingface:/root/.cache/huggingface
     ports:
       - "7860:7860"
     deploy:
