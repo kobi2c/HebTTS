@@ -18,6 +18,7 @@ from tests.test_config import (
 from tests.test_speaker import test_speaker_data
 from tests.test_checkpoint import test_checkpoint_data
 from tests.test_range import test_range_and_range_list
+from tests.test_chunk import test_chunk_and_chunk_list
 from tests.test_make_voice import (
     test_mki_parsing_with_config,
     test_voice_maker_args,
@@ -44,6 +45,7 @@ ALL_TESTS = [
     ("SpeakerStore / SpeakerData", test_speaker_data),
     ("CheckpointStore / CheckpointData", test_checkpoint_data),
     ("Range & RangeList", test_range_and_range_list),
+    ("Chunk & ChunkList", test_chunk_and_chunk_list),
     ("MKI Parsing & Text Chunking", test_mki_parsing_with_config),
     ("VoiceMaker CLI & Instance Fields", test_voice_maker_args),
     ("VoiceMaker --range-only Execution & Join", test_voice_maker_range_only_run),

@@ -22,6 +22,11 @@ from config import (
     Range,
     RangeList,
     NoiseFix,
+    Chunk,
+    ChunkList,
+    ChunkStatus,
+    split_text,
+    format_srt_time,
     audio_to_base64,
     base64_to_audio,
 )
@@ -31,80 +36,6 @@ from valle.data import AudioTokenizer, tokenize_audio
 from valle.data.collation import get_text_token_collater
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from nikud_converter import convert_nikud_text, has_nikud
-
-def split_text(text: str, max_len: int = 100) -> List[str]:
-    """
-    Splits Hebrew text into natural clauses and sentences not exceeding max_len characters.
-    Preserves line breaks and sentence context to prevent VALL-E attention overflow.
-    """
-    all_combined_parts: List[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith("---") or line.startswith("["):
-            continue
-        # Clean problematic punctuation / dashes
-        line = line.replace("_", " ")
-        line = line.replace("—", "-").replace("–", "-")
-        line = line.replace("’", "'").replace("‘", "'")
-        # 1. Split by major sentence boundaries (.!?)
-        sentences = re.split(r'(?<=[.!?])\s+', line)
-        parts: List[str] = []
-        for s in sentences:
-            s = s.strip()
-            if not s:
-                continue
-            if len(s) <= max_len:
-                parts.append(s)
-                continue
-            # 2. Split by secondary clause boundaries (,;:)
-            sub_sentences = re.split(r'(?<=[,;:])\s+', s)
-            current_part = ""
-            for sub in sub_sentences:
-                sub = sub.strip()
-                if not sub:
-                    continue
-                if len(sub) > max_len:
-                    # 3. If still exceeding max_len, split by words
-                    words = sub.split(" ")
-                    for w in words:
-                        if len(current_part) + len(w) + 1 > max_len:
-                            if current_part:
-                                parts.append(current_part.strip())
-                            current_part = w + " "
-                        else:
-                            current_part += w + " "
-                else:
-                    if len(current_part) + len(sub) + 1 > max_len:
-                        if current_part:
-                            parts.append(current_part.strip())
-                        current_part = sub + " "
-                    else:
-                        current_part += sub + " "
-            if current_part:
-                parts.append(current_part.strip())
-        # Combine small parts up to max_len
-        combined_parts: List[str] = []
-        current_part = ""
-        for p in parts:
-            if len(current_part) + len(p) + 1 <= max_len:
-                current_part += (" " if current_part else "") + p
-            else:
-                if current_part:
-                    combined_parts.append(current_part)
-                current_part = p
-        if current_part:
-            combined_parts.append(current_part)
-        all_combined_parts.extend(combined_parts)
-    return all_combined_parts
-def format_srt_time(seconds: float) -> str:
-    """Formats seconds into standard SRT timestamp: HH:MM:SS,mmm"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds - int(seconds)) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
 class VoiceMakerParser(argparse.ArgumentParser):
@@ -438,6 +369,7 @@ class VoiceMaker:
         print(f"Output Directory: {output_dir}")
         print(f"Device:           {self.page.device} ({self.page.device_name})")
         print(f"{'='*70}\n")
+
         # 1. Load base configuration and read lines
         base_config = self.load_base_config(self.base_config)
         lines = self.read_mki_file(input_path)
@@ -445,173 +377,42 @@ class VoiceMaker:
         if not blocks:
             print("No valid text lines found in .mki file.")
             sys.exit(0)
+
         # 2. Deconstruct into manageable text chunks
-        all_chunks: List[Tuple[Config, str]] = []
-        for block_config, block_text in blocks:
-            parts = split_text(block_text, max_len=self.max_len)
-            for part in parts:
-                all_chunks.append((block_config, part))
-        print(f"Found {len(blocks)} configuration blocks -> {len(all_chunks)} text chunks to synthesize.")
+        chunks = ChunkList.from_blocks(blocks, max_len=self.max_len)
+        print(f"Found {len(blocks)} configuration blocks -> {len(chunks)} text chunks to synthesize.")
 
         # Parse optional range filter
         active_range: Optional[RangeList] = None
         if self.range:
-            active_range = RangeList.parse(self.range).normalize(last=len(all_chunks))
-            indices = active_range.indices(len(all_chunks))
+            active_range = RangeList.parse(self.range).normalize(last=len(chunks))
+            indices = active_range.indices(len(chunks))
             label = "Range-Only" if self.range_only else "Range"
-            print(f"[{label}] Filter active: {active_range} ({len(indices)} of {len(all_chunks)} chunks selected).")
+            print(f"[{label}] Filter active: {active_range} ({len(indices)} of {len(chunks)} chunks selected).")
         elif self.range_only:
             print("[Range-Only] Note: No range specified, processing all chunks.")
 
-        fade_ms = float(self.fade_ms)
-        trim_noise = bool(self.trim_noise)
-        pad_ms = float(self.pad_ms)
-        clean_existing = bool(self.clean_existing)
-
-        # Determine target chunks to process and join
-        if self.range_only and active_range is not None:
-            target_indices = set(active_range.indices(len(all_chunks)))
-        else:
-            target_indices = set(range(1, len(all_chunks) + 1))
-        last_target_idx = max(target_indices) if target_indices else -1
-
-        all_wavs: List[np.ndarray] = []
-        srt_entries: List[Tuple[float, float, str]] = []
-        current_time_sec = 0.0
-        sample_rate = 24000
-
         # 3. Process or generate audio chunk by chunk
-        synthesized_count = 0
-        reused_count = 0
-        skipped_count = 0
-        cleaned_count = 0
-        batch_start_time = time.time()
+        chunks.process(
+            voice_maker=self,
+            output_dir=output_dir,
+            basename=basename,
+            active_range=active_range,
+            range_only=self.range_only,
+            clean_existing=bool(self.clean_existing),
+            trim_noise=bool(self.trim_noise),
+            pad_ms=float(self.pad_ms),
+            fade_ms=float(self.fade_ms),
+        )
 
-        print("\n" + "=" * 95)
-        print(f"{'Chunk':<10} {'Status':<14} {'Audio':<10} {'Tokens (Prompt->Total)':<24} Text")
-        print("-" * 95)
-
-        for chunk_idx, (chunk_config, chunk_text) in enumerate(all_chunks, start=1):
-            text_preview = chunk_text[:35] + "..." if len(chunk_text) > 35 else chunk_text
-
-            if self.range_only and chunk_idx not in target_indices:
-                skipped_count += 1
-                print(f"[{chunk_idx:>2}/{len(all_chunks):<2}]    {'SKIPPED':<14} {'-':<10} {'-':<24} {text_preview}")
-                continue
-
-            chunk_wav_path = output_dir / f"{basename}_{chunk_idx:03d}.wav"
-            chunk_txt_path = output_dir / f"{basename}_{chunk_idx:03d}.txt"
-
-            if clean_existing:
-                if chunk_wav_path.exists():
-                    audio_np, sr_disk = sf.read(str(chunk_wav_path), dtype="float32")
-                    if active_range is None or chunk_idx in active_range:
-                        if trim_noise:
-                            audio_np = NoiseFix.trim(audio_np, sr=sr_disk, pad_ms=pad_ms)
-                        if fade_ms > 0:
-                            audio_np = NoiseFix.fade(audio_np, sr=sr_disk, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
-                        sf.write(str(chunk_wav_path), audio_np, sr_disk)
-                    cleaned_count += 1
-                    status = "CLEANED"
-                    tokens_str = "-"
-                else:
-                    skipped_count += 1
-                    print(f"[{chunk_idx:>2}/{len(all_chunks):<2}]    {'NOT_FOUND':<14} {'-':<10} {'-':<24} {text_preview}")
-                    continue
-            else:
-                should_synthesize = True
-                if active_range is not None and chunk_idx not in active_range:
-                    if chunk_wav_path.exists():
-                        should_synthesize = False
-
-                if should_synthesize:
-                    checkpoint = chunk_config.checkpoint
-                    mbd = bool(chunk_config.mbd)
-
-                    # Ensure model and tokenizers are loaded in memory
-                    model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.page.load_model_if_needed(
-                        checkpoint, mbd
-                    )
-                    model.verbose = False
-                    model.last_eos = None
-
-                    # Synthesize chunk
-                    audio_np = self.synthesize_chunk(
-                        chunk_text=chunk_text,
-                        config=chunk_config,
-                        model=model,
-                        audio_tokenizer=audio_tokenizer,
-                        text_collater=text_collater,
-                        alef_bert_tokenizer=alef_bert_tokenizer,
-                        fade_ms=fade_ms,
-                        trim_noise=trim_noise,
-                        pad_ms=pad_ms,
-                    )
-
-                    # Save individual chunk wav and txt
-                    sf.write(str(chunk_wav_path), audio_np, sample_rate)
-                    with open(chunk_txt_path, "w", encoding="utf-8") as f:
-                        f.write(chunk_text)
-
-                    synthesized_count += 1
-                    status = "SYNTHESIZED"
-                    eos = getattr(model, "last_eos", None)
-                    if eos and isinstance(eos, (tuple, list)) and len(eos) >= 2:
-                        p_len, tot_len = eos[0], eos[1]
-                        diff = tot_len - p_len
-                        tokens_str = f"{p_len} -> {tot_len} (+{diff})"
-                    else:
-                        tokens_str = "-"
-                else:
-                    # Re-use existing chunk audio from disk
-                    audio_np, _ = sf.read(str(chunk_wav_path), dtype="float32")
-                    reused_count += 1
-                    status = "REUSED"
-                    tokens_str = "-"
-
-            duration = len(audio_np) / float(sample_rate)
-            duration_str = f"{duration:.2f}s"
-            print(f"[{chunk_idx:>2}/{len(all_chunks):<2}]    {status:<14} {duration_str:<10} {tokens_str:<24} {text_preview}")
-
-            start_time = current_time_sec
-            end_time = current_time_sec + duration
-            srt_entries.append((start_time, end_time, chunk_text))
-            all_wavs.append(audio_np)
-            current_time_sec = end_time
-            # Inter-sentence pause
-            pause_sec = float(chunk_config.pause_duration)
-            if chunk_idx != last_target_idx and pause_sec > 0:
-                silence_len = int(round(sample_rate * pause_sec))
-                silence = np.zeros(silence_len, dtype=audio_np.dtype)
-                all_wavs.append(silence)
-                current_time_sec += pause_sec
-
-        total_elapsed = time.time() - batch_start_time
-        print("-" * 95)
-        if clean_existing:
-            print(f"Summary: {cleaned_count} cleaned, {skipped_count} skipped ({len(all_chunks)} total chunks) in {total_elapsed:.1f}s")
-        else:
-            print(f"Summary: {synthesized_count} synthesized, {reused_count} reused, {skipped_count} skipped ({len(all_chunks)} total chunks) in {total_elapsed:.1f}s")
-        print("=" * 95)
         # 4. Save merged audio and subtitles
-        if all_wavs:
-            final_wav = np.concatenate(all_wavs, axis=-1)
-            if Format.WAV in self.format:
-                final_wav_path = output_dir / f"{basename}.wav"
-                sf.write(str(final_wav_path), final_wav, sample_rate)
-                print(f"\n[+] Saved merged audio (WAV): {final_wav_path} ({current_time_sec:.2f}s)")
-            if Format.MP3 in self.format:
-                final_mp3_path = output_dir / f"{basename}.mp3"
-                sf.write(str(final_mp3_path), final_wav, sample_rate, format="MP3")
-                print(f"\n[+] Saved merged audio (MP3): {final_mp3_path} ({current_time_sec:.2f}s)")
+        merged_wav, total_sec = chunks.join_audio()
+        if merged_wav is not None:
+            chunks.save_merged(output_dir, basename, self.format, merged_wav, sample_rate=24000)
+            chunks.save_srt(output_dir, basename)
 
-            final_srt_path = output_dir / f"{basename}.srt"
-            with open(final_srt_path, "w", encoding="utf-8") as f:
-                for idx, (st, en, txt) in enumerate(srt_entries, start=1):
-                    f.write(f"{idx}\n")
-                    f.write(f"{format_srt_time(st)} --> {format_srt_time(en)}\n")
-                    f.write(f"{txt}\n\n")
-            print(f"[+] Saved subtitles:          {final_srt_path}")
+        print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")
+        return output_dir
         print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")
         return output_dir
 

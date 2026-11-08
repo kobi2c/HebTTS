@@ -9,8 +9,8 @@ if str(root_dir) not in sys.path:
 
 import tests.setup_env  # noqa: F401
 
-from config import Config, Format, NoiseFix
-from make_voice import VoiceMaker, VoiceMakerParser, split_text
+from config import Config, Format, NoiseFix, split_text
+from make_voice import VoiceMaker, VoiceMakerParser
 
 
 def test_mki_parsing_with_config():
