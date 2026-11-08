@@ -4,13 +4,13 @@ import os
 import re
 import random
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import soundfile as sf
 import torch
 import torchaudio
-from tqdm import tqdm
 import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
 from config import (
     Config,
@@ -184,12 +184,6 @@ class VoiceMakerParser(argparse.ArgumentParser):
             default="wav",
             help="Output audio format for merged audio: 'wav', 'mp3', or 'both' (default: 'wav')",
         )
-        self.add_argument(
-            "--mp3",
-            action="store_true",
-            default=False,
-            help="Shortcut flag to output merged audio in MP3 format (equivalent to --format mp3)",
-        )
 
 
 class VoiceMaker:
@@ -272,12 +266,8 @@ class VoiceMaker:
             self.range_only = bool(range_only_val)
 
         # Handle format: List[Format]
-        mp3_flag = bool(getattr(parsed, "mp3", False))
         parsed_format = getattr(parsed, "format", "wav")
-        if mp3_flag and parsed_format == "wav":
-            self.format = [Format.MP3]
-        else:
-            self.format = Format.normalize(parsed_format)
+        self.format = Format.normalize(parsed_format)
 
         return parsed
 
@@ -491,9 +481,22 @@ class VoiceMaker:
         sample_rate = 24000
 
         # 3. Process or generate audio chunk by chunk
-        desc = "Cleaning Audio" if clean_existing else "Generating Audio"
-        for chunk_idx, (chunk_config, chunk_text) in enumerate(tqdm(all_chunks, desc=desc), start=1):
+        synthesized_count = 0
+        reused_count = 0
+        skipped_count = 0
+        cleaned_count = 0
+        batch_start_time = time.time()
+
+        print("\n" + "=" * 95)
+        print(f"{'Chunk':<10} {'Status':<14} {'Audio':<10} {'Tokens (Prompt->Total)':<24} Text")
+        print("-" * 95)
+
+        for chunk_idx, (chunk_config, chunk_text) in enumerate(all_chunks, start=1):
+            text_preview = chunk_text[:35] + "..." if len(chunk_text) > 35 else chunk_text
+
             if self.range_only and chunk_idx not in target_indices:
+                skipped_count += 1
+                print(f"[{chunk_idx:>2}/{len(all_chunks):<2}]    {'SKIPPED':<14} {'-':<10} {'-':<24} {text_preview}")
                 continue
 
             chunk_wav_path = output_dir / f"{basename}_{chunk_idx:03d}.wav"
@@ -508,8 +511,12 @@ class VoiceMaker:
                         if fade_ms > 0:
                             audio_np = NoiseFix.fade(audio_np, sr=sr_disk, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
                         sf.write(str(chunk_wav_path), audio_np, sr_disk)
+                    cleaned_count += 1
+                    status = "CLEANED"
+                    tokens_str = "-"
                 else:
-                    print(f"Warning: Chunk file {chunk_wav_path} not found on disk to clean.")
+                    skipped_count += 1
+                    print(f"[{chunk_idx:>2}/{len(all_chunks):<2}]    {'NOT_FOUND':<14} {'-':<10} {'-':<24} {text_preview}")
                     continue
             else:
                 should_synthesize = True
@@ -525,6 +532,8 @@ class VoiceMaker:
                     model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.page.load_model_if_needed(
                         checkpoint, mbd
                     )
+                    model.verbose = False
+                    model.last_eos = None
 
                     # Synthesize chunk
                     audio_np = self.synthesize_chunk(
@@ -543,11 +552,27 @@ class VoiceMaker:
                     sf.write(str(chunk_wav_path), audio_np, sample_rate)
                     with open(chunk_txt_path, "w", encoding="utf-8") as f:
                         f.write(chunk_text)
+
+                    synthesized_count += 1
+                    status = "SYNTHESIZED"
+                    eos = getattr(model, "last_eos", None)
+                    if eos and isinstance(eos, (tuple, list)) and len(eos) >= 2:
+                        p_len, tot_len = eos[0], eos[1]
+                        diff = tot_len - p_len
+                        tokens_str = f"{p_len} -> {tot_len} (+{diff})"
+                    else:
+                        tokens_str = "-"
                 else:
                     # Re-use existing chunk audio from disk
                     audio_np, _ = sf.read(str(chunk_wav_path), dtype="float32")
+                    reused_count += 1
+                    status = "REUSED"
+                    tokens_str = "-"
 
             duration = len(audio_np) / float(sample_rate)
+            duration_str = f"{duration:.2f}s"
+            print(f"[{chunk_idx:>2}/{len(all_chunks):<2}]    {status:<14} {duration_str:<10} {tokens_str:<24} {text_preview}")
+
             start_time = current_time_sec
             end_time = current_time_sec + duration
             srt_entries.append((start_time, end_time, chunk_text))
@@ -560,6 +585,14 @@ class VoiceMaker:
                 silence = np.zeros(silence_len, dtype=audio_np.dtype)
                 all_wavs.append(silence)
                 current_time_sec += pause_sec
+
+        total_elapsed = time.time() - batch_start_time
+        print("-" * 95)
+        if clean_existing:
+            print(f"Summary: {cleaned_count} cleaned, {skipped_count} skipped ({len(all_chunks)} total chunks) in {total_elapsed:.1f}s")
+        else:
+            print(f"Summary: {synthesized_count} synthesized, {reused_count} reused, {skipped_count} skipped ({len(all_chunks)} total chunks) in {total_elapsed:.1f}s")
+        print("=" * 95)
         # 4. Save merged audio and subtitles
         if all_wavs:
             final_wav = np.concatenate(all_wavs, axis=-1)

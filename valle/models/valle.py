@@ -646,7 +646,9 @@ class VALLF(nn.Module):
                         "well trained model shouldn't reach here."
                     )
 
-                print(f"VALL-F EOS [{prefix_len} -> {y.shape[1]}]")
+                self.last_eos = (prefix_len, y.shape[1])
+                if getattr(self, "verbose", True):
+                    print(f"VALL-F EOS [{prefix_len} -> {y.shape[1]}]")
                 break
 
             y = torch.concat([y, samples], dim=1)
@@ -1062,7 +1064,9 @@ class VALLE(VALLF):
                         "well trained model shouldn't reach here."
                     )
 
-                print(f"VALL-E EOS [{prompts.shape[1]} -> {y.shape[1]}]")
+                self.last_eos = (prompts.shape[1], y.shape[1])
+                if getattr(self, "verbose", True):
+                    print(f"VALL-E EOS [{prompts.shape[1]} -> {y.shape[1]}]")
                 break
 
             y = torch.concat([y, samples], dim=1)
@@ -1617,7 +1621,9 @@ class VALLE_ALEPHBERT(VALLF):
                         "well trained model shouldn't reach here."
                     )
 
-                print(f"VALL-E EOS [{prompts.shape[1]} -> {y.shape[1]}]")
+                self.last_eos = (prompts.shape[1], y.shape[1])
+                if getattr(self, "verbose", True):
+                    print(f"VALL-E EOS [{prompts.shape[1]} -> {y.shape[1]}]")
                 break
 
             y = torch.concat([y, samples], dim=1)
@@ -2184,7 +2190,9 @@ class VALLE_ALEPHBERT_CONCAT(VALLF):
                         "well trained model shouldn't reach here."
                     )
 
-                print(f"VALL-E EOS [{prompts.shape[1]} -> {y.shape[1]}]")
+                self.last_eos = (prompts.shape[1], y.shape[1])
+                if getattr(self, "verbose", True):
+                    print(f"VALL-E EOS [{prompts.shape[1]} -> {y.shape[1]}]")
                 break
 
             y = torch.concat([y, samples], dim=1)

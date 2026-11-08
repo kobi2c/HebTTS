@@ -145,8 +145,8 @@ def test_voice_maker_args():
     assert vm.range == "3"
     assert vm.range_only is True
 
-    # 7. --mp3 shortcut flag sets format to [Format.MP3]
-    vm.parse_args(["-i", "test.mki", "--mp3"])
+    # 7. --format mp3 sets format to [Format.MP3]
+    vm.parse_args(["-i", "test.mki", "--format", "mp3"])
     assert vm.format == [Format.MP3]
     print("[PASS] VoiceMaker instance fields and parse_args verified.")
 
@@ -164,7 +164,9 @@ def test_voice_maker_range_only_run():
 
         vm = VoiceMaker()
         # Mock synthesis to avoid model weight loading in unit test
-        def mock_synth(chunk_text, **kwargs):
+        def mock_synth(chunk_text, model=None, **kwargs):
+            if model is not None:
+                model.last_eos = (195, 425)
             return np.ones(24000, dtype=np.float32) * 0.1  # 1 second of audio at 24kHz
 
         vm.synthesize_chunk = mock_synth
@@ -222,7 +224,9 @@ def test_voice_maker_format_options_run():
         out_dir = tmp_path / "out"
 
         vm = VoiceMaker()
-        def mock_synth(chunk_text, **kwargs):
+        def mock_synth(chunk_text, model=None, **kwargs):
+            if model is not None:
+                model.last_eos = (195, 425)
             return np.ones(24000, dtype=np.float32) * 0.1
 
         vm.synthesize_chunk = mock_synth
@@ -241,8 +245,8 @@ def test_voice_maker_format_options_run():
         for f in out_dir.iterdir():
             f.unlink()
 
-        # 2. Test --mp3 flag (only MP3)
-        vm.run(["-i", str(mki_file), "--mp3", "-o", str(out_dir)])
+        # 2. Test --format mp3 (only MP3)
+        vm.run(["-i", str(mki_file), "--format", "mp3", "-o", str(out_dir)])
         assert (out_dir / "fmt_test.mp3").exists()
         assert not (out_dir / "fmt_test.wav").exists()
 
@@ -255,7 +259,53 @@ def test_voice_maker_format_options_run():
         assert (out_dir / "fmt_test.wav").exists()
         assert not (out_dir / "fmt_test.mp3").exists()
 
-    print("[PASS] VoiceMaker --format and --mp3 output execution verified.")
+    print("[PASS] VoiceMaker --format output execution verified.")
+
+
+def test_voice_maker_table_progress_output():
+    import io
+    import tempfile
+    from contextlib import redirect_stdout
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        mki_file = tmp_path / "table_test.mki"
+        mki_file.write_text("שורה אחת\nשורה שתיים\nשורה שלוש\n", encoding="utf-8")
+        out_dir = tmp_path / "out"
+
+        vm = VoiceMaker()
+        mock_model = MagicMock()
+        mock_model.last_eos = (195, 425)
+
+        def mock_synth(chunk_text, model=None, **kwargs):
+            if model is not None:
+                model.last_eos = (195, 425)
+            return np.ones(24000, dtype=np.float32) * 0.1
+
+        vm.synthesize_chunk = mock_synth
+        vm.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            vm.run(["-i", str(mki_file), "--range-only", "2", "-o", str(out_dir)])
+        out = buf.getvalue()
+
+        # Verify table header
+        assert "Chunk" in out
+        assert "Status" in out
+        assert "Tokens (Prompt->Total)" in out
+
+        # Verify rows
+        assert "SKIPPED" in out
+        assert "SYNTHESIZED" in out
+        assert "195 -> 425 (+230)" in out
+
+        # Verify summary
+        assert "Summary: 1 synthesized, 0 reused, 2 skipped (3 total chunks)" in out
+        assert mock_model.verbose is False
+
+    print("[PASS] VoiceMaker structured table progress and summary verified.")
 
 
 if __name__ == "__main__":
@@ -263,4 +313,5 @@ if __name__ == "__main__":
     test_voice_maker_args()
     test_voice_maker_range_only_run()
     test_voice_maker_format_options_run()
+    test_voice_maker_table_progress_output()
     print("\n🎉 ALL TESTS IN tests/test_make_voice.py PASSED SUCCESSFULLY!")

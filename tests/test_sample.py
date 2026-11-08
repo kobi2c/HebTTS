@@ -95,8 +95,8 @@ def test_sampler_args():
     assert s2.speaker == "1"
     assert s2.text == "בדיקת Namespace"
 
-    # 5. --mp3 shortcut flag sets format to [Format.MP3]
-    s.parse_args(["--mp3"])
+    # 5. --format mp3 sets format to [Format.MP3]
+    s.parse_args(["--format", "mp3"])
     assert s.format == [Format.MP3]
 
     # 6. --format both sets format to [Format.WAV, Format.MP3]

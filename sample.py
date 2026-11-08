@@ -91,12 +91,6 @@ class SamplerParser(argparse.ArgumentParser):
             help="Output audio format ('wav', 'mp3', or 'both')",
         )
         self.add_argument(
-            "--mp3",
-            action="store_true",
-            default=False,
-            help="Shortcut flag to output audio as MP3",
-        )
-        self.add_argument(
             "--top-k",
             type=int,
             default=50,
@@ -392,11 +386,8 @@ class Sampler:
         self.clone_txt = parsed.clone_txt
         self.output = parsed.output
         # Handle format: List[Format]
-        mp3_flag = bool(getattr(parsed, "mp3", False))
         parsed_format = getattr(parsed, "format", None)
-        if mp3_flag and (parsed_format is None or parsed_format == "wav"):
-            self.format = [Format.MP3]
-        elif parsed_format is not None:
+        if parsed_format is not None:
             self.format = Format.normalize(parsed_format)
         elif parsed.output and str(parsed.output).lower().endswith(".mp3"):
             self.format = [Format.MP3]
