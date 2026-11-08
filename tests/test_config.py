@@ -13,6 +13,7 @@ import tests.setup_env  # noqa: F401
 
 from config import (
     Config,
+    Format,
     MbdMode,
     RandomMode,
     NikudMode,
@@ -28,6 +29,23 @@ def test_enums():
         assert int(enum_cls.Enabled) == 1
         assert bool(enum_cls.Enabled) is True
         assert bool(enum_cls.Disabled) is False
+
+    assert isinstance(Format.WAV, int)
+    assert isinstance(Format.MP3, int)
+    assert Format.WAV == 1
+    assert Format.MP3 == 2
+    assert int(Format.WAV) == 1
+    assert int(Format.MP3) == 2
+    assert Format.WAV == "wav"
+    assert Format.MP3 == "mp3"
+    assert Format("WAV") == Format.WAV
+    assert Format("wav") == Format.WAV
+    assert Format("MP3") == Format.MP3
+    assert Format("mp3") == Format.MP3
+    assert Format(1) == Format.WAV
+    assert Format(2) == Format.MP3
+    assert str(Format.WAV) == "wav"
+    assert str(Format.MP3) == "mp3"
     print("[PASS] Enums verified.")
 
 

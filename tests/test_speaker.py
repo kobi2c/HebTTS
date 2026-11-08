@@ -68,9 +68,18 @@ def test_speaker_data():
     )
     assert sp_abs.wav == "abs_spk.wav"
     assert sp_abs.full_path == Path("speakers/abs_spk.wav")
+    # Test Speaker.audio_file property
+    assert s1.audio_file == s1.wav
+    assert sp_test.audio_file == "custom_spk.wav"
+
     # Test auto-discovery: .wav without .txt must NOT be discovered
     dummy_wav = Path("speakers/dummy_temp_spk.wav")
     dummy_txt = Path("speakers/dummy_temp_spk.txt")
+    dummy_mp3 = Path("speakers/dummy_temp_mp3_spk.mp3")
+    dummy_mp3_txt = Path("speakers/dummy_temp_mp3_spk.txt")
+    collision_wav = Path("speakers/dummy_collision.wav")
+    collision_mp3 = Path("speakers/dummy_collision.mp3")
+    collision_txt = Path("speakers/dummy_collision.txt")
     try:
         dummy_wav.touch()
         mgr.clear()
@@ -84,11 +93,30 @@ def test_speaker_data():
         assert discovered.wav == "dummy_temp_spk.wav"
         assert discovered.txt == "Hello prompt text"
         assert discovered.full_path == Path("speakers/dummy_temp_spk.wav")
+
+        # Test MP3 auto-discovery
+        dummy_mp3.touch()
+        dummy_mp3_txt.write_text("Hello MP3 text", encoding="utf-8")
+        mgr.clear()
+        discovered_mp3 = mgr.find("dummy_temp_mp3_spk")
+        assert discovered_mp3 is not None
+        assert discovered_mp3.id == "dummy_temp_mp3_spk"
+        assert discovered_mp3.wav == "dummy_temp_mp3_spk.mp3"
+        assert discovered_mp3.audio_file == "dummy_temp_mp3_spk.mp3"
+        assert discovered_mp3.txt == "Hello MP3 text"
+
+        # Test collision: if both .wav and .mp3 exist, .wav takes precedence
+        collision_wav.touch()
+        collision_mp3.touch()
+        collision_txt.write_text("Collision prompt", encoding="utf-8")
+        mgr.clear()
+        discovered_coll = mgr.find("dummy_collision")
+        assert discovered_coll is not None
+        assert discovered_coll.wav == "dummy_collision.wav"
     finally:
-        if dummy_wav.exists():
-            dummy_wav.unlink()
-        if dummy_txt.exists():
-            dummy_txt.unlink()
+        for p in (dummy_wav, dummy_txt, dummy_mp3, dummy_mp3_txt, collision_wav, collision_mp3, collision_txt):
+            if p.exists():
+                p.unlink()
         mgr.clear()
     mgr.clear()
     assert mgr._list is None

@@ -21,6 +21,8 @@ from tests.test_range import test_range_and_range_list
 from tests.test_make_voice import (
     test_mki_parsing_with_config,
     test_voice_maker_args,
+    test_voice_maker_range_only_run,
+    test_voice_maker_format_options_run,
 )
 from tests.test_gradio_page import (
     test_generate_audio_strict_config,
@@ -38,6 +40,8 @@ ALL_TESTS = [
     ("Range & RangeList", test_range_and_range_list),
     ("MKI Parsing & Text Chunking", test_mki_parsing_with_config),
     ("VoiceMaker CLI & Instance Fields", test_voice_maker_args),
+    ("VoiceMaker --range-only Execution & Join", test_voice_maker_range_only_run),
+    ("VoiceMaker MP3 / Both Output Formats", test_voice_maker_format_options_run),
     ("Strict Config Enforcement", test_generate_audio_strict_config),
     ("GradioPage Config Helpers", test_gradio_page_config_helpers),
     ("Table Printing", test_table_printing),

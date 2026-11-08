@@ -14,6 +14,7 @@ from tqdm import tqdm
 import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
 from config import (
     Config,
+    Format,
     MbdMode,
     RandomMode,
     NikudMode,
@@ -168,6 +169,27 @@ class VoiceMakerParser(argparse.ArgumentParser):
             default=None,
             help="Generate only specified chunk index ranges (e.g. '1-5', '@-10', '5-@', 'x-10', '5-x', '3,7-9'). Outside chunks are re-used from disk.",
         )
+        self.add_argument(
+            "--range-only", "--range_only",
+            dest="range_only",
+            nargs="?",
+            const=True,
+            default=False,
+            help="Generate and join only the specified range chunks without reading or joining outside chunks from disk. Can be used as a flag (with --range) or passed a range directly (e.g. --range-only '3').",
+        )
+        self.add_argument(
+            "--format",
+            type=str,
+            choices=["wav", "mp3", "both"],
+            default="wav",
+            help="Output audio format for merged audio: 'wav', 'mp3', or 'both' (default: 'wav')",
+        )
+        self.add_argument(
+            "--mp3",
+            action="store_true",
+            default=False,
+            help="Shortcut flag to output merged audio in MP3 format (equivalent to --format mp3)",
+        )
 
 
 class VoiceMaker:
@@ -188,6 +210,8 @@ class VoiceMaker:
         pad_ms: float = 30.0,
         clean_existing: bool = False,
         range: Optional[str] = None,
+        range_only: bool = False,
+        format: Optional[List[Format]] = None,
     ) -> None:
         self.page: GradioPage = page or GradioPage()
         self.sampler: Sampler = sampler or self.page.sampler
@@ -200,10 +224,36 @@ class VoiceMaker:
         self.pad_ms: float = pad_ms
         self.clean_existing: bool = clean_existing
         self.range: Optional[str] = range
+        self.range_only: bool = bool(range_only)
+        self.format: List[Format] = self.normalize_formats(format)
         # Cache reference audio embeddings per prompt
         self._cached_prompt_audio: Optional[str] = None
         self._cached_audio_prompts: Optional[torch.Tensor] = None
         self._cached_prompt_text: Optional[str] = None
+
+    @classmethod
+    def normalize_formats(cls, val: Any) -> List[Format]:
+        """Normalizes format inputs into a List[Format]."""
+        if val is None:
+            return [Format.WAV]
+        if isinstance(val, (Format, str)):
+            val = [val]
+        formats: List[Format] = []
+        for item in val:
+            if isinstance(item, Format):
+                if item not in formats:
+                    formats.append(item)
+            elif isinstance(item, str):
+                s = item.strip().lower()
+                if s == "both":
+                    for f in (Format.WAV, Format.MP3):
+                        if f not in formats:
+                            formats.append(f)
+                else:
+                    f = Format(s)
+                    if f not in formats:
+                        formats.append(f)
+        return formats or [Format.WAV]
 
     def create_parser(self) -> VoiceMakerParser:
         """Creates and returns the command line argument parser for VoiceMaker."""
@@ -233,6 +283,24 @@ class VoiceMaker:
         self.pad_ms = parsed.pad_ms
         self.clean_existing = parsed.clean_existing
         self.range = parsed.range
+
+        # Handle --range-only: can be bool flag or range string
+        range_only_val = getattr(parsed, "range_only", False)
+        if isinstance(range_only_val, str):
+            if not self.range:
+                self.range = range_only_val
+            self.range_only = True
+        else:
+            self.range_only = bool(range_only_val)
+
+        # Handle format: List[Format]
+        mp3_flag = bool(getattr(parsed, "mp3", False))
+        parsed_format = getattr(parsed, "format", "wav")
+        if mp3_flag and parsed_format == "wav":
+            self.format = [Format.MP3]
+        else:
+            self.format = self.normalize_formats(parsed_format)
+
         return parsed
 
 
@@ -422,12 +490,22 @@ class VoiceMaker:
         if self.range:
             active_range = RangeList.parse(self.range).normalize(last=len(all_chunks))
             indices = active_range.indices(len(all_chunks))
-            print(f"[Range] Filter active: {active_range} ({len(indices)} of {len(all_chunks)} chunks selected).")
+            label = "Range-Only" if self.range_only else "Range"
+            print(f"[{label}] Filter active: {active_range} ({len(indices)} of {len(all_chunks)} chunks selected).")
+        elif self.range_only:
+            print("[Range-Only] Note: No range specified, processing all chunks.")
 
         fade_ms = float(self.fade_ms)
         trim_noise = bool(self.trim_noise)
         pad_ms = float(self.pad_ms)
         clean_existing = bool(self.clean_existing)
+
+        # Determine target chunks to process and join
+        if self.range_only and active_range is not None:
+            target_indices = set(active_range.indices(len(all_chunks)))
+        else:
+            target_indices = set(range(1, len(all_chunks) + 1))
+        last_target_idx = max(target_indices) if target_indices else -1
 
         all_wavs: List[np.ndarray] = []
         srt_entries: List[Tuple[float, float, str]] = []
@@ -437,6 +515,9 @@ class VoiceMaker:
         # 3. Process or generate audio chunk by chunk
         desc = "Cleaning Audio" if clean_existing else "Generating Audio"
         for chunk_idx, (chunk_config, chunk_text) in enumerate(tqdm(all_chunks, desc=desc), start=1):
+            if self.range_only and chunk_idx not in target_indices:
+                continue
+
             chunk_wav_path = output_dir / f"{basename}_{chunk_idx:03d}.wav"
             chunk_txt_path = output_dir / f"{basename}_{chunk_idx:03d}.txt"
 
@@ -496,24 +577,30 @@ class VoiceMaker:
             current_time_sec = end_time
             # Inter-sentence pause
             pause_sec = float(chunk_config.pause_duration)
-            if chunk_idx < len(all_chunks) and pause_sec > 0:
-                silence_len = int(sample_rate * pause_sec)
+            if chunk_idx != last_target_idx and pause_sec > 0:
+                silence_len = int(round(sample_rate * pause_sec))
                 silence = np.zeros(silence_len, dtype=audio_np.dtype)
                 all_wavs.append(silence)
                 current_time_sec += pause_sec
         # 4. Save merged audio and subtitles
         if all_wavs:
             final_wav = np.concatenate(all_wavs, axis=-1)
-            final_wav_path = output_dir / f"{basename}.wav"
-            sf.write(str(final_wav_path), final_wav, sample_rate)
-            print(f"\n[+] Saved merged audio: {final_wav_path} ({current_time_sec:.2f}s)")
+            if Format.WAV in self.format:
+                final_wav_path = output_dir / f"{basename}.wav"
+                sf.write(str(final_wav_path), final_wav, sample_rate)
+                print(f"\n[+] Saved merged audio (WAV): {final_wav_path} ({current_time_sec:.2f}s)")
+            if Format.MP3 in self.format:
+                final_mp3_path = output_dir / f"{basename}.mp3"
+                sf.write(str(final_mp3_path), final_wav, sample_rate, format="MP3")
+                print(f"\n[+] Saved merged audio (MP3): {final_mp3_path} ({current_time_sec:.2f}s)")
+
             final_srt_path = output_dir / f"{basename}.srt"
             with open(final_srt_path, "w", encoding="utf-8") as f:
                 for idx, (st, en, txt) in enumerate(srt_entries, start=1):
                     f.write(f"{idx}\n")
                     f.write(f"{format_srt_time(st)} --> {format_srt_time(en)}\n")
                     f.write(f"{txt}\n\n")
-            print(f"[+] Saved subtitles:    {final_srt_path}")
+            print(f"[+] Saved subtitles:          {final_srt_path}")
         print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")
         return output_dir
 

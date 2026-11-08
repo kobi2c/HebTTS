@@ -24,6 +24,11 @@ class Speaker:
             return p
 
     @property
+    def audio_file(self) -> str:
+        """Alias for self.wav representing the speaker prompt audio filename."""
+        return self.wav
+
+    @property
     def exists(self) -> bool:
         """Returns True if the speaker audio file exists on disk."""
         return os.path.exists(self.full_path)
@@ -111,9 +116,16 @@ class SpeakerStore:
             sp = Speaker().parse(spk_data, base_file, spk_id)
             add(sp, False)
 
-        # 2. Discover additional local *.wav files with companion *.txt files in base directory
+        # 2. Discover additional local *.wav and *.mp3 files with companion *.txt files in base directory
         if base_file.exists() and base_file.is_dir():
+            # Scan both .wav and .mp3, prioritizing .wav on collision
+            discovered_files: Dict[str, Path] = {}
+            for f in sorted(base_file.glob("*.mp3")):
+                discovered_files[f.stem] = f
             for f in sorted(base_file.glob("*.wav")):
+                discovered_files[f.stem] = f  # .wav overwrites .mp3 if both exist
+
+            for stem, f in sorted(discovered_files.items()):
                 txt_file = f.with_suffix(".txt")
                 if txt_file.exists():
                     try:

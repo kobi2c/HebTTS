@@ -9,7 +9,7 @@ if str(root_dir) not in sys.path:
 
 import tests.setup_env  # noqa: F401
 
-from config import Config, NoiseFix
+from config import Config, Format, NoiseFix
 from make_voice import VoiceMaker, VoiceMakerParser, split_text
 
 
@@ -87,6 +87,8 @@ def test_voice_maker_args():
     assert vm.pad_ms == 30.0
     assert vm.clean_existing is False
     assert vm.range is None
+    assert vm.range_only is False
+    assert vm.format == [Format.WAV]
     assert isinstance(vm.create_parser(), VoiceMakerParser)
 
     # 2. parse_args with list
@@ -100,6 +102,8 @@ def test_voice_maker_args():
         "--pad_ms", "25.0",
         "--clean_existing",
         "--range", "1-3",
+        "--range-only",
+        "--format", "both",
     ])
     assert parsed.input == "data/a1.mki"
     assert vm.input == "data/a1.mki"
@@ -111,13 +115,17 @@ def test_voice_maker_args():
     assert vm.pad_ms == 25.0
     assert vm.clean_existing is True
     assert vm.range == "1-3"
+    assert vm.range_only is True
+    assert vm.format == [Format.WAV, Format.MP3]
 
-    # 3. Direct constructor initialization
-    vm2 = VoiceMaker(input="test.mki", max_len=50, fade_ms=10.0)
+    # 3. Direct constructor initialization with List[Format]
+    vm2 = VoiceMaker(input="test.mki", max_len=50, fade_ms=10.0, range_only=True, format=[Format.WAV, Format.MP3])
     assert vm2.input == "test.mki"
     assert vm2.max_len == 50
     assert vm2.fade_ms == 10.0
     assert vm2.trim_noise is True
+    assert vm2.range_only is True
+    assert vm2.format == [Format.WAV, Format.MP3]
 
     # 4. parse_args with existing Namespace
     parser = VoiceMakerParser()
@@ -125,10 +133,134 @@ def test_voice_maker_args():
     vm2.parse_args(ns)
     assert vm2.input == "ns_input.mki"
     assert vm2.range == "4-6"
+    assert vm2.range_only is False
+
+    # 5. --range-only with direct range string argument
+    vm.parse_args(["-i", "test.mki", "--range-only", "2-5"])
+    assert vm.range == "2-5"
+    assert vm.range_only is True
+
+    # 6. --range_only with underscore variant
+    vm.parse_args(["-i", "test.mki", "--range", "3", "--range_only"])
+    assert vm.range == "3"
+    assert vm.range_only is True
+
+    # 7. --mp3 shortcut flag sets format to [Format.MP3]
+    vm.parse_args(["-i", "test.mki", "--mp3"])
+    assert vm.format == [Format.MP3]
     print("[PASS] VoiceMaker instance fields and parse_args verified.")
+
+
+def test_voice_maker_range_only_run():
+    import tempfile
+    import soundfile as sf
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        mki_file = tmp_path / "test.mki"
+        mki_file.write_text("שורה ראשונה\nשורה שנייה\nשורה שלישית\n", encoding="utf-8")
+        out_dir = tmp_path / "out"
+
+        vm = VoiceMaker()
+        # Mock synthesis to avoid model weight loading in unit test
+        def mock_synth(chunk_text, **kwargs):
+            return np.ones(24000, dtype=np.float32) * 0.1  # 1 second of audio at 24kHz
+
+        vm.synthesize_chunk = mock_synth
+        vm.page.load_model_if_needed = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
+
+        # Run with --range "2" --range-only
+        vm.run(["-i", str(mki_file), "--range", "2", "--range-only", "-o", str(out_dir)])
+
+        # Verify only chunk 2 was created
+        assert (out_dir / "test_002.wav").exists()
+        assert not (out_dir / "test_001.wav").exists()
+        assert not (out_dir / "test_003.wav").exists()
+
+        # Verify merged audio contains only chunk 2 (1.0 sec)
+        merged_wav, sr = sf.read(str(out_dir / "test.wav"))
+        assert sr == 24000
+        assert len(merged_wav) == 24000  # exactly 1.0 second, no trailing silence
+
+        # Verify subtitles contain only 1 entry
+        srt_content = (out_dir / "test.srt").read_text(encoding="utf-8").strip()
+        assert "1\n00:00:00,000 --> 00:00:01,000\nשורה שנייה" in srt_content
+        assert "2\n" not in srt_content
+
+        # Clean up output dir for second test
+        for f in out_dir.iterdir():
+            f.unlink()
+
+        # Run with --range-only "1,3"
+        vm.run(["-i", str(mki_file), "--range-only", "1,3", "-o", str(out_dir)])
+        assert (out_dir / "test_001.wav").exists()
+        assert (out_dir / "test_003.wav").exists()
+        assert not (out_dir / "test_002.wav").exists()
+
+        merged_wav2, _ = sf.read(str(out_dir / "test.wav"))
+        # 1.0s + 0.3s pause + 1.0s = 2.3s = 55200 samples
+        assert len(merged_wav2) == 24000 + int(round(24000 * 0.3)) + 24000
+
+        srt_content2 = (out_dir / "test.srt").read_text(encoding="utf-8")
+        assert "שורה ראשונה" in srt_content2
+        assert "שורה שלישית" in srt_content2
+        assert "שורה שנייה" not in srt_content2
+
+    print("[PASS] VoiceMaker --range-only execution and join verified.")
+
+
+def test_voice_maker_format_options_run():
+    import tempfile
+    import soundfile as sf
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        mki_file = tmp_path / "fmt_test.mki"
+        mki_file.write_text("שורה ראשונה לבדיקת פורמט\n", encoding="utf-8")
+        out_dir = tmp_path / "out"
+
+        vm = VoiceMaker()
+        def mock_synth(chunk_text, **kwargs):
+            return np.ones(24000, dtype=np.float32) * 0.1
+
+        vm.synthesize_chunk = mock_synth
+        vm.page.load_model_if_needed = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
+
+        # 1. Test --format both
+        vm.run(["-i", str(mki_file), "--format", "both", "-o", str(out_dir)])
+        assert (out_dir / "fmt_test.wav").exists()
+        assert (out_dir / "fmt_test.mp3").exists()
+        wav_data, sr_wav = sf.read(str(out_dir / "fmt_test.wav"))
+        mp3_data, sr_mp3 = sf.read(str(out_dir / "fmt_test.mp3"))
+        assert sr_wav == 24000
+        assert sr_mp3 == 24000
+
+        # Clean directory
+        for f in out_dir.iterdir():
+            f.unlink()
+
+        # 2. Test --mp3 flag (only MP3)
+        vm.run(["-i", str(mki_file), "--mp3", "-o", str(out_dir)])
+        assert (out_dir / "fmt_test.mp3").exists()
+        assert not (out_dir / "fmt_test.wav").exists()
+
+        # Clean directory
+        for f in out_dir.iterdir():
+            f.unlink()
+
+        # 3. Test default (only WAV)
+        vm.run(["-i", str(mki_file), "-o", str(out_dir)])
+        assert (out_dir / "fmt_test.wav").exists()
+        assert not (out_dir / "fmt_test.mp3").exists()
+
+    print("[PASS] VoiceMaker --format and --mp3 output execution verified.")
 
 
 if __name__ == "__main__":
     test_mki_parsing_with_config()
     test_voice_maker_args()
+    test_voice_maker_range_only_run()
+    test_voice_maker_format_options_run()
     print("\n🎉 ALL TESTS IN tests/test_make_voice.py PASSED SUCCESSFULLY!")

@@ -7,6 +7,7 @@ from .Config import (
     audio_to_base64,
     base64_to_audio,
 )
+from .Format     import ( Format                                         )
 from .Speaker    import ( Speaker    , SpeakerStore    , SpeakerData    )
 from .Checkpoint import ( Checkpoint , CheckpointStore , CheckpointData )
 from .Range      import ( Range      , RangeList                        )
@@ -17,6 +18,7 @@ __all__ = [
     "MbdMode",
     "RandomMode",
     "NikudMode",
+    "Format",
     "DEFAULT_TEXT",
     "audio_to_base64",
     "base64_to_audio",

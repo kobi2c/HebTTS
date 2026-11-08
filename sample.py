@@ -257,11 +257,11 @@ class Sampler:
             help="Hebrew text to synthesize",
         )
         parser.add_argument(
-            "--clone-wav",
+            "--clone-wav", "--clone-audio",
             type=str,
             default=None,
             dest="clone_wav",
-            help="Reference audio file path for voice cloning (.wav)",
+            help="Reference audio file path for voice cloning (.wav, .mp3)",
         )
         parser.add_argument(
             "--clone-txt",
@@ -274,7 +274,20 @@ class Sampler:
             "--output",
             type=str,
             default=None,
-            help="Output wav file (default: same directory and stem as input file or sample.wav)",
+            help="Output audio file (default: same directory and stem as input file or sample.wav)",
+        )
+        parser.add_argument(
+            "--format",
+            type=str,
+            choices=["wav", "mp3"],
+            default=None,
+            help="Output audio format ('wav' or 'mp3')",
+        )
+        parser.add_argument(
+            "--mp3",
+            action="store_true",
+            default=False,
+            help="Shortcut flag to output audio as MP3",
         )
         parser.add_argument(
             "--top-k",
@@ -342,22 +355,23 @@ class Sampler:
             lines = ["שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית."]
 
         # Resolve output path: if not explicitly specified, default to same directory and stem as input file
+        target_ext = ".mp3" if (getattr(args, "mp3", False) or getattr(args, "format", None) == "mp3") else ".wav"
         if args.output is not None:
             out_p = Path(args.output)
             if out_p.is_dir() or str(args.output).endswith(("\\", "/")):
                 stem = input_file_path.stem if input_file_path is not None else "sample"
-                output_path = out_p / f"{stem}.wav"
+                output_path = out_p / f"{stem}{target_ext}"
             elif not out_p.suffix:
-                output_path = out_p.with_suffix(".wav")
+                output_path = out_p.with_suffix(target_ext)
             else:
                 output_path = out_p
         elif input_file_path is not None:
-            output_path = input_file_path.with_suffix(".wav")
+            output_path = input_file_path.with_suffix(target_ext)
         else:
-            output_path = Path("sample.wav")
+            output_path = Path(f"sample{target_ext}")
 
         if not output_path.suffix:
-            output_path = output_path.with_suffix(".wav")
+            output_path = output_path.with_suffix(target_ext)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Resolve prompt audio and text

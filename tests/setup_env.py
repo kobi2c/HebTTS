@@ -25,4 +25,3 @@ for mod in [
             __import__(mod)
         except ImportError:
             sys.modules[mod] = MagicMock()
-

@@ -183,7 +183,7 @@ class GradioPage:
             prompt_text = spk.txt
         else:  # Custom Voice Clone
             if not cfg.clone_audio or not os.path.exists(cfg.clone_audio):
-                raise gr.Error("Please upload a reference audio (.wav) for voice cloning.")
+                raise gr.Error("Please upload a reference audio (.wav or .mp3) for voice cloning.")
             if not cfg.clone_text or not cfg.clone_text.strip():
                 raise gr.Error("Please provide reference transcript text corresponding to the clone audio.")
             prompt_audio = cfg.clone_audio
@@ -328,9 +328,9 @@ class GradioPage:
 
                     # Custom clone controls
                     with gr.Group(visible=False) as clone_group:
-                        gr.Markdown("Upload reference audio (**24kHz mono WAV**) and its transcript:")
+                        gr.Markdown("Upload reference audio (**24kHz mono WAV or MP3**) and its transcript:")
                         clone_audio = gr.Audio(
-                            label="Reference Voice Audio (.wav)",
+                            label="Reference Voice Audio (.wav, .mp3)",
                             type="filepath",
                         )
                         clone_text = gr.Textbox(
