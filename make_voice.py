@@ -403,7 +403,14 @@ class VoiceMaker:
         elif self.range_only:
             print("[Range-Only] Note: No range specified, processing all chunks.")
 
-        # 3. Process or generate audio chunk by chunk
+        # 3. Pre-load initial model and MBD vocoder if synthesis is needed
+        if not self.clean_existing:
+            target_indices, _ = chunks.filter_targets(active_range, self.range_only)
+            target_chunk = next((c for c in chunks if c.index in target_indices), None)
+            if target_chunk:
+                self.page.load_model_if_needed(target_chunk.config.checkpoint, target_chunk.config.mbd)
+
+        # 4. Process or generate audio chunk by chunk
         chunks.process(
             voice_maker=self,
             output_dir=output_dir,
@@ -417,7 +424,7 @@ class VoiceMaker:
             fade_ms=float(self.fade_ms),
         )
 
-        # 4. Save merged audio and subtitles
+        # 5. Save merged audio and subtitles
         merged_wav, total_sec = chunks.join_audio()
         if merged_wav is not None:
             chunks.save_merged(output_dir, basename, self.format, merged_wav, sample_rate=24000)

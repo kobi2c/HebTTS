@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -114,6 +115,7 @@ class GradioPage:
 
         if self.model is None or self.checkpoint != checkpoint_path:
             print(f"Loading checkpoint '{checkpoint_path}' on {self.device} ({self.device_name})...")
+            t_model_start = time.time()
             if self.model is not None:
                 del self.model
                 if torch.cuda.is_available():
@@ -121,12 +123,16 @@ class GradioPage:
 
             self.model, _ = self.sampler.load_model(str(actual_path), self.device)
             self.checkpoint = checkpoint_path
-            print("Model loaded successfully.")
+            model_dur = time.time() - t_model_start
+            print(f"Model loaded successfully in {model_dur:.2f}s.")
 
         if self.audio_tokenizer is None or self.mbd != mbd_mode:
             print(f"Initializing AudioTokenizer (MBD={mbd_mode.name}) on {self.device}...")
+            t_tok_start = time.time()
             self.audio_tokenizer = AudioTokenizer(mbd=bool(mbd_mode), device=self.device)
             self.mbd = mbd_mode
+            tok_dur = time.time() - t_tok_start
+            print(f"AudioTokenizer (MBD={mbd_mode.name}) initialized in {tok_dur:.2f}s.")
 
         if self.text_collater is None:
             self.text_collater = get_text_token_collater(self.sampler.tokens_file)

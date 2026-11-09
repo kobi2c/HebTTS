@@ -129,6 +129,7 @@ class Chunk:
     start_time: float = 0.0
     end_time: float = 0.0
     tokens_str: str = "-"
+    proc_time: float = 0.0
     error: Optional[str] = None
 
     def wav_path(self, output_dir: Union[str, Path], basename: str) -> Path:
@@ -225,6 +226,7 @@ class Chunk:
         model.verbose = False
         model.last_eos = None
 
+        t_synth_start = time.time()
         audio_np = voice_maker.synthesize_chunk(
             chunk_text=self.text,
             config=self.config,
@@ -238,6 +240,7 @@ class Chunk:
             trim_noise=trim_noise,
             pad_ms=pad_ms,
         )
+        self.proc_time = time.time() - t_synth_start
 
         self.audio = audio_np
         self.sample_rate = 24000
@@ -261,7 +264,12 @@ class Chunk:
         """Formats single row string for the CLI progress table."""
         text_preview = self.text[:35] + "..." if len(self.text) > 35 else self.text
         duration_str = f"{self.duration:.2f}s" if self.duration > 0 else "-"
-        return f"[{self.index:>2}/{total_chunks:<2}]    {self.status.name:<14} {duration_str:<10} {self.tokens_str:<24} {text_preview}"
+        proc_str = (
+            f"{self.proc_time:.1f}s"
+            if self.proc_time > 0
+            else ("0.0s" if self.status == ChunkStatus.REUSED else "-")
+        )
+        return f"[{self.index:>2}/{total_chunks:<2}]    {self.status.name:<14} {duration_str:<10} {proc_str:<10} {self.tokens_str:<24} {text_preview}"
 
     def to_srt_block(self, srt_index: int) -> str:
         """Formats the chunk into an SRT subtitle cue block."""
@@ -405,13 +413,14 @@ class ChunkList:
         batch_start_time = time.time()
         current_time_sec = 0.0
 
-        print("\n" + "=" * 95)
-        print(f"{'Chunk':<10} {'Status':<14} {'Audio':<10} {'Tokens (Prompt->Total)':<24} Text")
-        print("-" * 95)
+        print("\n" + "=" * 105)
+        print(f"{'Chunk':<10} {'Status':<14} {'Audio':<10} {'Proc':<10} {'Tokens (Prompt->Total)':<24} Text")
+        print("-" * 105)
 
         for chunk_idx, chunk in enumerate(self.chunks):
             if range_only and chunk.index not in target_indices:
                 chunk.status = ChunkStatus.SKIPPED
+                chunk.proc_time = 0.0
                 skipped_count += 1
                 print(chunk.format_table_row(total_chunks))
                 continue
@@ -419,6 +428,7 @@ class ChunkList:
             if clean_existing:
                 if chunk.exists(out_dir, basename):
                     apply_fix = (active_range is None or chunk.index in active_range)
+                    t_clean = time.time()
                     chunk.clean(
                         out_dir,
                         basename,
@@ -427,9 +437,11 @@ class ChunkList:
                         fade_ms=fade_ms,
                         apply_fix=apply_fix,
                     )
+                    chunk.proc_time = time.time() - t_clean
                     cleaned_count += 1
                 else:
                     chunk.status = ChunkStatus.NOT_FOUND
+                    chunk.proc_time = 0.0
                     skipped_count += 1
                     print(chunk.format_table_row(total_chunks))
                     continue
@@ -461,7 +473,9 @@ class ChunkList:
                     )
                     synthesized_count += 1
                 else:
+                    t_load = time.time()
                     chunk.load_audio(out_dir, basename)
+                    chunk.proc_time = time.time() - t_load
                     reused_count += 1
 
             print(chunk.format_table_row(total_chunks))
@@ -476,12 +490,12 @@ class ChunkList:
                 current_time_sec += pause_sec
 
         total_elapsed = time.time() - batch_start_time
-        print("-" * 95)
+        print("-" * 105)
         if clean_existing:
             print(f"Summary: {cleaned_count} cleaned, {skipped_count} skipped ({total_chunks} total chunks) in {total_elapsed:.1f}s")
         else:
             print(f"Summary: {synthesized_count} synthesized, {reused_count} reused, {skipped_count} skipped ({total_chunks} total chunks) in {total_elapsed:.1f}s")
-        print("=" * 95)
+        print("=" * 105)
 
         return {
             "synthesized": synthesized_count,
