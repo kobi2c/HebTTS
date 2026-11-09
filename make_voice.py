@@ -67,10 +67,11 @@ class VoiceMakerParser(argparse.ArgumentParser):
             help="Output directory (defaults to <input_dir>/out/)",
         )
         self.add_argument(
-            "--max_len",
+            "--max_chunk_size",
+            dest="max_chunk_size",
             type=int,
-            default=100,
-            help="Maximum character length per text chunk before splitting (default: 100)",
+            default=None,
+            help="Maximum character length per text chunk before splitting (defaults to base config max_chunk_size)",
         )
         self.add_argument(
             "--fade_ms",
@@ -131,7 +132,7 @@ class VoiceMaker:
         input: Optional[Union[str, Path]] = None,
         base_config: Optional[str] = None,
         output_dir: Optional[Union[str, Path]] = None,
-        max_len: int = 100,
+        max_chunk_size: Optional[int] = None,
         fade_ms: float = 20.0,
         trim_noise: bool = True,
         pad_ms: float = 30.0,
@@ -146,7 +147,7 @@ class VoiceMaker:
         self.input: Optional[Union[str, Path]] = input
         self.base_config: Optional[str] = base_config
         self.output_dir: Optional[Union[str, Path]] = output_dir
-        self.max_len: int = max_len
+        self.max_chunk_size: Optional[int] = int(max_chunk_size) if max_chunk_size is not None else None
         self.fade_ms: float = fade_ms
         self.trim_noise: bool = trim_noise
         self.pad_ms: float = pad_ms
@@ -184,7 +185,7 @@ class VoiceMaker:
         self.input = parsed.input
         self.base_config = parsed.base_config
         self.output_dir = parsed.output_dir
-        self.max_len = parsed.max_len
+        self.max_chunk_size = parsed.max_chunk_size
         self.fade_ms = parsed.fade_ms
         self.trim_noise = parsed.trim_noise
         self.pad_ms = parsed.pad_ms
@@ -390,7 +391,12 @@ class VoiceMaker:
             sys.exit(0)
 
         # 2. Deconstruct into manageable text chunks
-        chunks = ChunkList.from_blocks(blocks, max_len=self.max_len)
+        effective_max_chunk = (
+            self.max_chunk_size
+            if self.max_chunk_size is not None
+            else base_config.max_chunk_size
+        )
+        chunks = ChunkList.from_blocks(blocks, max_chunk_size=effective_max_chunk)
         print(f"Found {len(blocks)} configuration blocks -> {len(chunks)} text chunks to synthesize.")
 
         # Parse optional range filter

@@ -77,25 +77,29 @@ def test_config_defaults():
     assert cfg.randomize_seed == RandomMode.Enabled
     assert cfg.nikud_converter == NikudMode.Enabled
     assert cfg.chain_speaker == ChainMode.Disabled
+    assert cfg.max_chunk_size == 100
     print("[PASS] Config defaults verified.")
 
 
 def test_config_dicts():
-    cfg = Config(temperature=1.2, top_k=80, mbd=MbdMode.Enabled, chain_speaker=ChainMode.Enabled)
+    cfg = Config(temperature=1.2, top_k=80, mbd=MbdMode.Enabled, chain_speaker=ChainMode.Enabled, max_chunk_size=75)
     d = cfg.to_dict()
     assert d["temperature"] == 1.2
     assert d["mbd"] == 1
     assert d["top_k"] == 80
     assert d["chain_speaker"] == 1
+    assert d["max_chunk_size"] == 75
     cfg_from_d = Config.from_dict(d)
     assert cfg_from_d.temperature == 1.2
     assert cfg_from_d.mbd == MbdMode.Enabled
     assert cfg_from_d.chain_speaker == ChainMode.Enabled
+    assert cfg_from_d.max_chunk_size == 75
     cfg_inst = Config()
     cfg_inst.from_dict(d)
     assert cfg_inst.temperature == 1.2
     assert cfg_inst.mbd == MbdMode.Enabled
     assert cfg_inst.chain_speaker == ChainMode.Enabled
+    assert cfg_inst.max_chunk_size == 75
     print("[PASS] Dict conversion verified.")
 
 
@@ -128,9 +132,11 @@ def test_json_methods():
             os.remove(tmp_name)
     # reset
     cfg_inst.temperature = 0.1
+    cfg_inst.max_chunk_size = 50
     cfg_inst.reset()
     assert cfg_inst.temperature == 1.0
     assert cfg_inst.mbd == MbdMode.Disabled
+    assert cfg_inst.max_chunk_size == 100
     print("[PASS] dumpJson, saveJson, loadJson, and reset verified.")
 
 

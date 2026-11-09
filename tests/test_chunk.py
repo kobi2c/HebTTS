@@ -88,10 +88,14 @@ def test_split_text_and_srt_formatting():
         "אותם קיצורי דרך נחמדים שמצילים אותנו מהמטלה המייגעת לחלוטין של חילוק ארוך. "
         "האם יצא לכם להביט במספר ענק ולדעת מיד אם אפשר לפצל אותו בשלמות לקבוצות קטנות יותר?"
     )
-    parts = split_text(long_text, max_len=100)
+    parts = split_text(long_text, max_chunk_size=100)
     assert len(parts) >= 2
     for p in parts:
         assert len(p) <= 100
+    parts_small = split_text(long_text, max_chunk_size=60)
+    for p in parts_small:
+        assert len(p) <= 60
+    assert len(parts_small) > len(parts)
     print("[PASS] split_text and format_srt_time verified.")
 
 
@@ -163,13 +167,27 @@ def test_chunk_list_collection_and_from_blocks():
         (cfg1, "שורה ראשונה קצרה"),
         (cfg2, "שורה שנייה קצרה"),
     ]
-    chunk_list = ChunkList.from_blocks(blocks, max_len=100)
+    chunk_list = ChunkList.from_blocks(blocks, max_chunk_size=100)
     assert len(chunk_list) == 2
     assert chunk_list[0].index == 1
     assert chunk_list[0].config.predefined_speaker == "osim"
     assert chunk_list[0].text == "שורה ראשונה קצרה"
     assert chunk_list[1].index == 2
     assert chunk_list[1].config.predefined_speaker == "shani"
+
+    # Inheritance from base config max_chunk_size
+    cfg_small = Config(max_chunk_size=40)
+    blocks_long = [
+        (cfg_small, "היום אנחנו הולכים ללמוד על העולם הקסום של כללי ההתחלקות אותם קיצורי דרך שמצילים אותנו"),
+    ]
+    chunk_list_inherited = ChunkList.from_blocks(blocks_long)
+    for c in chunk_list_inherited:
+        assert len(c.text) <= 40
+    assert len(chunk_list_inherited) > 1
+
+    # Explicit override overrides base_config.max_chunk_size
+    chunk_list_override = ChunkList.from_blocks(blocks_long, max_chunk_size=200)
+    assert len(chunk_list_override) == 1
 
     # Slicing & iteration
     chunks_sub = chunk_list[0:1]

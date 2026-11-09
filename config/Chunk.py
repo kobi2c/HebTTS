@@ -22,9 +22,9 @@ def format_srt_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def split_text(text: str, max_len: int = 100) -> List[str]:
+def split_text(text: str, max_chunk_size: int = 100) -> List[str]:
     """
-    Splits Hebrew text into natural clauses and sentences not exceeding max_len characters.
+    Splits Hebrew text into natural clauses and sentences not exceeding max_chunk_size characters.
     Preserves line breaks and sentence context to prevent VALL-E attention overflow.
     """
     all_combined_parts: List[str] = []
@@ -45,7 +45,7 @@ def split_text(text: str, max_len: int = 100) -> List[str]:
             s = s.strip()
             if not s:
                 continue
-            if len(s) <= max_len:
+            if len(s) <= max_chunk_size:
                 parts.append(s)
                 continue
             # 2. Split by secondary clause boundaries (,;:)
@@ -55,18 +55,18 @@ def split_text(text: str, max_len: int = 100) -> List[str]:
                 sub = sub.strip()
                 if not sub:
                     continue
-                if len(sub) > max_len:
-                    # 3. If still exceeding max_len, split by words
+                if len(sub) > max_chunk_size:
+                    # 3. If still exceeding max_chunk_size, split by words
                     words = sub.split(" ")
                     for w in words:
-                        if len(current_part) + len(w) + 1 > max_len:
+                        if len(current_part) + len(w) + 1 > max_chunk_size:
                             if current_part:
                                 parts.append(current_part.strip())
                             current_part = w + " "
                         else:
                             current_part += w + " "
                 else:
-                    if len(current_part) + len(sub) + 1 > max_len:
+                    if len(current_part) + len(sub) + 1 > max_chunk_size:
                         if current_part:
                             parts.append(current_part.strip())
                         current_part = sub + " "
@@ -74,11 +74,11 @@ def split_text(text: str, max_len: int = 100) -> List[str]:
                         current_part += sub + " "
             if current_part:
                 parts.append(current_part.strip())
-        # Combine small parts up to max_len
+        # Combine small parts up to max_chunk_size
         combined_parts: List[str] = []
         current_part = ""
         for p in parts:
-            if len(current_part) + len(p) + 1 <= max_len:
+            if len(current_part) + len(p) + 1 <= max_chunk_size:
                 current_part += (" " if current_part else "") + p
             else:
                 if current_part:
@@ -379,12 +379,21 @@ class ChunkList:
     split_text = staticmethod(split_text)
 
     @classmethod
-    def from_blocks(cls, blocks: List[Tuple[Config, str]], max_len: int = 100) -> "ChunkList":
+    def from_blocks(
+        cls,
+        blocks: List[Tuple[Config, str]],
+        max_chunk_size: Optional[int] = None,
+    ) -> "ChunkList":
         """Constructs a ChunkList from parsed MKI blocks [(Config, text)]."""
+        effective_chunk_size = (
+            max_chunk_size
+            if max_chunk_size is not None
+            else (blocks[0][0].max_chunk_size if blocks else 100)
+        )
         chunk_items: List[Chunk] = []
         idx = 1
         for block_config, block_text in blocks:
-            parts = split_text(block_text, max_len=max_len)
+            parts = split_text(block_text, max_chunk_size=effective_chunk_size)
             for part in parts:
                 chunk_items.append(Chunk(index=idx, config=block_config, text=part))
                 idx += 1

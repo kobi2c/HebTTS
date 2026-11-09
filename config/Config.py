@@ -103,6 +103,7 @@ class Config:
     randomize_seed     : RandomMode = RandomMode.Enabled
     nikud_converter    : NikudMode = NikudMode.Enabled
     chain_speaker      : ChainMode = ChainMode.Disabled
+    max_chunk_size     : int = 100
 
     def reset(self) -> "Config":
         """Resets all configuration fields in-place to their default values."""
@@ -125,6 +126,7 @@ class Config:
         self.randomize_seed = RandomMode.Enabled
         self.nikud_converter = NikudMode.Enabled
         self.chain_speaker = ChainMode.Disabled
+        self.max_chunk_size = 100
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -144,6 +146,7 @@ class Config:
             "randomize_seed": int(self.randomize_seed),
             "nikud_converter": int(self.nikud_converter),
             "chain_speaker": int(self.chain_speaker),
+            "max_chunk_size": int(self.max_chunk_size),
         }
 
     def _apply_dict(self, data: Dict[str, Any]) -> "Config":
@@ -180,6 +183,8 @@ class Config:
             self.nikud_converter = NikudMode(int(data["nikud_converter"]))
         if "chain_speaker" in data and data["chain_speaker"] is not None:
             self.chain_speaker = ChainMode(int(data["chain_speaker"]))
+        if "max_chunk_size" in data and data["max_chunk_size"] is not None:
+            self.max_chunk_size = int(data["max_chunk_size"])
         return self
 
     from_dict = _FromDictDescriptor()

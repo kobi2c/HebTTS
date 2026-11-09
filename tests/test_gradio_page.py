@@ -40,7 +40,7 @@ def test_gradio_page_config_helpers():
     assert isinstance(gp.config, Config)
     # Check default ui values
     ui_vals = gp.get_ui_values_from_config()
-    assert len(ui_vals) == 13
+    assert len(ui_vals) == 14
     assert ui_vals[0] == gp.config.checkpoint
     assert ui_vals[1] == "Predefined Speaker"
     assert ui_vals[5] == DEFAULT_TEXT
@@ -51,6 +51,7 @@ def test_gradio_page_config_helpers():
     assert ui_vals[10] == 420
     assert ui_vals[11] == 1  # int(RandomMode.Enabled)
     assert ui_vals[12] == 1  # int(NikudMode.Enabled)
+    assert ui_vals[13] == 100
     # Test update_config_from_ui
     gp.update_config_from_ui(
         checkpoint="custom_cp.pt",
@@ -66,6 +67,7 @@ def test_gradio_page_config_helpers():
         seed_number=123,
         randomize_seed=0,
         nikud_converter=0,
+        max_chunk_size=150,
     )
     assert gp.config.checkpoint == "custom_cp.pt"
     assert gp.config.speaker_mode == "Custom Voice Clone"
@@ -80,6 +82,7 @@ def test_gradio_page_config_helpers():
     assert gp.config.seed_number == 123
     assert gp.config.randomize_seed == RandomMode.Disabled
     assert gp.config.nikud_converter == NikudMode.Disabled
+    assert gp.config.max_chunk_size == 150
     # Export & Import settings
     exported_json = gp.export_settings()
     assert os.path.exists(exported_json)
@@ -87,10 +90,12 @@ def test_gradio_page_config_helpers():
         # Reset and import
         gp.config.reset()
         assert gp.config.temperature == 1.0
+        assert gp.config.max_chunk_size == 100
         imported_tuple = gp.import_settings(exported_json)
-        assert len(imported_tuple) == 13
+        assert len(imported_tuple) == 14
         assert gp.config.temperature == 0.8
         assert gp.config.checkpoint == "custom_cp.pt"
+        assert gp.config.max_chunk_size == 150
     finally:
         if os.path.exists(exported_json):
             os.remove(exported_json)

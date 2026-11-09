@@ -60,6 +60,7 @@ class GradioPage:
         seed_number: int,
         randomize_seed: Union[RandomMode, int, bool],
         nikud_converter: Union[NikudMode, int, bool],
+        max_chunk_size: int = 100,
     ) -> Config:
         """Updates self.config attributes in-place from UI components with type conversions."""
         self.config.checkpoint = str(checkpoint)
@@ -75,6 +76,7 @@ class GradioPage:
         self.config.seed_number = int(seed_number)
         self.config.randomize_seed = RandomMode(int(randomize_seed))
         self.config.nikud_converter = NikudMode(int(nikud_converter))
+        self.config.max_chunk_size = int(max_chunk_size)
         return self.config
 
     def get_ui_values_from_config(self) -> List[Any]:
@@ -93,6 +95,7 @@ class GradioPage:
             self.config.seed_number,
             int(self.config.randomize_seed),
             int(self.config.nikud_converter),
+            int(self.config.max_chunk_size),
         ]
 
     def load_model_if_needed(
@@ -406,6 +409,14 @@ class GradioPage:
                             value=self.config.mbd,
                             info="Enable MBD diffusion vocoder (if installed) instead of EnCodec decode.",
                         )
+                        max_chunk_slider = gr.Slider(
+                            minimum=20,
+                            maximum=300,
+                            value=self.config.max_chunk_size,
+                            step=5,
+                            label="Max Chunk Size (characters)",
+                            info="Maximum character length before splitting long text into chunks.",
+                        )
 
                     with gr.Column():
                         gr.Markdown("#### Sampling Controls")
@@ -523,6 +534,7 @@ class GradioPage:
                 seed_number,
                 randomize_seed,
                 nikud_checkbox,
+                max_chunk_slider,
             ]
 
             # Generate Audio (Accepts only Config instance)

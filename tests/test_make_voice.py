@@ -36,7 +36,7 @@ def test_mki_parsing_with_config():
     assert b2_cfg.temperature == 1.0  # reset back to base_cfg
     assert b2_text == "שלום שורה שנייה"
 
-    # Test split_text with default max_len=100
+    # Test split_text with default max_chunk_size=100
     long_hebrew = (
         "היום אנחנו הולכים ללמוד על העולם הקסום של כללי ההתחלקות, "
         "אותם קיצורי דרך נחמדים שמצילים אותנו מהמטלה המייגעת לחלוטין של חילוק ארוך. "
@@ -44,7 +44,7 @@ def test_mki_parsing_with_config():
     )
     chunks = split_text(long_hebrew)
     for c in chunks:
-        assert len(c) <= 100, f"Chunk exceeded max_len=100: {len(c)} chars ({c})"
+        assert len(c) <= 100, f"Chunk exceeded max_chunk_size=100: {len(c)} chars ({c})"
     assert len(chunks) >= 2
 
     # Test NoiseFix.fade
@@ -81,7 +81,7 @@ def test_voice_maker_args():
     assert vm.input is None
     assert vm.base_config is None
     assert vm.output_dir is None
-    assert vm.max_len == 100
+    assert vm.max_chunk_size is None
     assert vm.fade_ms == 20.0
     assert vm.trim_noise is True
     assert vm.pad_ms == 30.0
@@ -96,7 +96,7 @@ def test_voice_maker_args():
         "-i", "data/a1.mki",
         "-c", "data/config1.json",
         "-o", "custom_out",
-        "--max_len", "80",
+        "--max_chunk_size", "80",
         "--fade_ms", "15.0",
         "--no-trim_noise",
         "--pad_ms", "25.0",
@@ -109,7 +109,7 @@ def test_voice_maker_args():
     assert vm.input == "data/a1.mki"
     assert vm.base_config == "data/config1.json"
     assert vm.output_dir == "custom_out"
-    assert vm.max_len == 80
+    assert vm.max_chunk_size == 80
     assert vm.fade_ms == 15.0
     assert vm.trim_noise is False
     assert vm.pad_ms == 25.0
@@ -119,14 +119,13 @@ def test_voice_maker_args():
     assert vm.format == [Format.WAV, Format.MP3]
 
     # 3. Direct constructor initialization with List[Format]
-    vm2 = VoiceMaker(input="test.mki", max_len=50, fade_ms=10.0, range_only=True, format=[Format.WAV, Format.MP3])
+    vm2 = VoiceMaker(input="test.mki", max_chunk_size=50, fade_ms=10.0, range_only=True, format=[Format.WAV, Format.MP3])
     assert vm2.input == "test.mki"
-    assert vm2.max_len == 50
+    assert vm2.max_chunk_size == 50
     assert vm2.fade_ms == 10.0
     assert vm2.trim_noise is True
     assert vm2.range_only is True
     assert vm2.format == [Format.WAV, Format.MP3]
-
     # 4. parse_args with existing Namespace
     parser = VoiceMakerParser()
     ns = parser.parse_args(["-i", "ns_input.mki", "--range", "4-6"])
@@ -393,6 +392,44 @@ def test_voice_maker_chain_speaker_execution():
     print("[PASS] VoiceMaker sequential speaker prompt chaining execution verified.")
 
 
+def test_voice_maker_max_chunk_size():
+    import tempfile
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        mki_file = tmp_path / "chunk_test.mki"
+        long_line = "היום אנחנו הולכים ללמוד על העולם הקסום של כללי ההתחלקות אותם קיצורי דרך שמצילים אותנו"
+        mki_file.write_text(f"{long_line}\n", encoding="utf-8")
+        cfg_file = tmp_path / "base_cfg.json"
+        Config(max_chunk_size=40).saveJson(str(cfg_file))
+        out_dir = tmp_path / "out"
+
+        synthesized_chunks = []
+        def mock_synth(chunk_text, model=None, **kwargs):
+            synthesized_chunks.append(chunk_text)
+            return np.ones(24000, dtype=np.float32) * 0.1
+
+        # 1. Inherits max_chunk_size=40 from base_config JSON
+        vm = VoiceMaker()
+        vm.synthesize_chunk = mock_synth
+        vm.page.load_model_if_needed = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
+        vm.run(["-i", str(mki_file), "-c", str(cfg_file), "-o", str(out_dir)])
+        assert len(synthesized_chunks) > 1
+        for c in synthesized_chunks:
+            assert len(c) <= 40
+
+        # 2. CLI --max_chunk_size overrides base_config
+        synthesized_chunks.clear()
+        for f in out_dir.iterdir():
+            f.unlink()
+        vm.run(["-i", str(mki_file), "-c", str(cfg_file), "--max_chunk_size", "200", "-o", str(out_dir)])
+        assert len(synthesized_chunks) == 1
+        assert synthesized_chunks[0] == long_line
+
+    print("[PASS] VoiceMaker max_chunk_size inheritance and CLI override verified.")
+
+
 if __name__ == "__main__":
     test_mki_parsing_with_config()
     test_voice_maker_args()
@@ -400,4 +437,5 @@ if __name__ == "__main__":
     test_voice_maker_format_options_run()
     test_voice_maker_table_progress_output()
     test_voice_maker_chain_speaker_execution()
+    test_voice_maker_max_chunk_size()
     print("\n🎉 ALL TESTS IN tests/test_make_voice.py PASSED SUCCESSFULLY!")
