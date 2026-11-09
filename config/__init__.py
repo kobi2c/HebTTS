@@ -13,7 +13,7 @@ from .Speaker    import ( Speaker    , SpeakerStore    , SpeakerData    )
 from .Checkpoint import ( Checkpoint , CheckpointStore , CheckpointData )
 from .Range      import ( Range      , RangeList                        )
 from .NoiseFix   import ( NoiseFix, trim_leading_noise, apply_fade      )
-from .Chunk      import ( Chunk      , ChunkList       , ChunkStatus    ,
+from .Chunk      import ( Chunk      , ChunkList       , ChunkStatus    , ChunkStats,
                           split_text , format_srt_time                  )
 
 __all__ = [
@@ -39,5 +39,6 @@ __all__ = [
     "apply_fade",
     "Chunk",
     "ChunkList",
-    "ChunkStatus"
+    "ChunkStatus",
+    "ChunkStats"
 ]

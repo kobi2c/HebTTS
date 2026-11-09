@@ -92,12 +92,14 @@ def split_text(text: str, max_len: int = 100) -> List[str]:
 
 class ChunkStatus(IntEnum):
     """Lifecycle status of an individual audio chunk during batch processing."""
-    PENDING = 0
-    SYNTHESIZED = 1
-    REUSED = 2
-    CLEANED = 3
-    SKIPPED = 4
-    NOT_FOUND = 5
+    PENDING   =  0
+    CREATED_S =  1
+    CREATED_T =  2
+    REUSED    = 11
+    CLEANED   = 12
+    SKIPPED   = 13
+    NOT_FOUND = 14
+    ERROR     = 15
 
     def __str__(self) -> str:
         return self.name
@@ -115,6 +117,46 @@ class ChunkStatus(IntEnum):
                     return member
         return super()._missing_(value)
 
+
+@dataclass
+class ChunkStats:
+    """Tracks chunk processing counts and generates summary reporting."""
+    total     : int = 0
+    created_s : int = 0
+    created_t : int = 0
+    reused    : int = 0
+    skipped   : int = 0
+    cleaned   : int = 0
+    elapsed_sec: float = 0.0
+
+    @property
+    def created(self) -> int:
+        """Total created chunks (standard script + text-overridden)."""
+        return self.created_s + self.created_t
+
+
+    def record(self, status: ChunkStatus) -> None:
+        """Increments appropriate counter based on ChunkStatus."""
+        if status == ChunkStatus.CREATED_S:
+            self.created_s += 1
+        elif status == ChunkStatus.CREATED_T:
+            self.created_t += 1
+        elif status == ChunkStatus.REUSED:
+            self.reused += 1
+        elif status in (ChunkStatus.SKIPPED, ChunkStatus.NOT_FOUND):
+            self.skipped += 1
+        elif status == ChunkStatus.CLEANED:
+            self.cleaned += 1
+
+    def format_summary(self, clean_existing: bool = False) -> str:
+        """Formats human-readable summary line."""
+        if clean_existing:
+            return f"Summary: {self.cleaned} cleaned, {self.skipped} skipped ({self.total} total chunks) in {self.elapsed_sec:.1f}s"
+        if self.created_t > 0:
+            created_str = f"{self.created} created (T: {self.created_t})"
+        else:
+            created_str = f"{self.created} created"
+        return f"Summary: {created_str}, {self.reused} reused, {self.skipped} skipped ({self.total} total chunks) in {self.elapsed_sec:.1f}s"
 
 @dataclass
 class Chunk:
@@ -139,6 +181,10 @@ class Chunk:
     def txt_path(self, output_dir: Union[str, Path], basename: str) -> Path:
         """Returns the destination .txt path for this chunk."""
         return Path(output_dir) / f"{basename}_{self.index:03d}.txt"
+
+    def input_path(self, output_dir: Union[str, Path], basename: str) -> Path:
+        """Returns the destination .input.txt path for this chunk."""
+        return Path(output_dir) / f"{basename}_{self.index:03d}.input.txt"
 
     def exists(self, output_dir: Union[str, Path], basename: str) -> bool:
         """Returns True if the chunk wav audio file exists on disk."""
@@ -226,6 +272,32 @@ class Chunk:
         model.verbose = False
         model.last_eos = None
 
+        # Check for input text override (e.g. xx_yyy.input.txt)
+        input_file = self.input_path(output_dir, basename)
+        is_overridden = False
+        if input_file.exists():
+            try:
+                with open(input_file, "r", encoding="utf-8-sig") as f:
+                    override_text = f.read().strip()
+            except UnicodeDecodeError:
+                with open(input_file, "r", encoding="cp1252") as f:
+                    override_text = f.read().strip()
+
+            txt_file = self.txt_path(output_dir, basename)
+            existing_text = ""
+            if txt_file.exists():
+                try:
+                    with open(txt_file, "r", encoding="utf-8-sig") as f:
+                        existing_text = f.read().strip()
+                except Exception:
+                    existing_text = self.text.strip()
+            else:
+                existing_text = self.text.strip()
+
+            if override_text and override_text != existing_text:
+                self.text = override_text
+                is_overridden = True
+
         t_synth_start = time.time()
         audio_np = voice_maker.synthesize_chunk(
             chunk_text=self.text,
@@ -250,7 +322,7 @@ class Chunk:
         self.save_audio(output_dir, basename)
         self.save_text(output_dir, basename)
 
-        self.status = ChunkStatus.SYNTHESIZED
+        self.status = ChunkStatus.CREATED_T if is_overridden else ChunkStatus.CREATED_S
         eos = model.last_eos
         if eos and isinstance(eos, (tuple, list)) and len(eos) >= 2:
             p_len, tot_len = eos[0], eos[1]
@@ -399,7 +471,7 @@ class ChunkList:
         trim_noise: bool = True,
         pad_ms: float = 30.0,
         fade_ms: float = 20.0,
-    ) -> Dict[str, int]:
+    ) -> ChunkStats:
         """
         Executes batch processing across all chunks with real-time table progress reporting.
         """
@@ -407,10 +479,7 @@ class ChunkList:
         total_chunks = len(self.chunks)
         target_indices, last_target_idx = self.filter_targets(active_range, range_only)
 
-        synthesized_count = 0
-        reused_count = 0
-        skipped_count = 0
-        cleaned_count = 0
+        stats = ChunkStats(total=total_chunks)
         batch_start_time = time.time()
         current_time_sec = 0.0
 
@@ -422,7 +491,7 @@ class ChunkList:
             if range_only and chunk.index not in target_indices:
                 chunk.status = ChunkStatus.SKIPPED
                 chunk.proc_time = 0.0
-                skipped_count += 1
+                stats.record(chunk.status)
                 print(chunk.format_table_row(total_chunks))
                 continue
 
@@ -439,11 +508,11 @@ class ChunkList:
                         apply_fix=apply_fix,
                     )
                     chunk.proc_time = time.time() - t_clean
-                    cleaned_count += 1
+                    stats.record(chunk.status)
                 else:
                     chunk.status = ChunkStatus.NOT_FOUND
                     chunk.proc_time = 0.0
-                    skipped_count += 1
+                    stats.record(chunk.status)
                     print(chunk.format_table_row(total_chunks))
                     continue
             else:
@@ -472,12 +541,12 @@ class ChunkList:
                         trim_noise=trim_noise,
                         pad_ms=pad_ms,
                     )
-                    synthesized_count += 1
+                    stats.record(chunk.status)
                 else:
                     t_load = time.time()
                     chunk.load_audio(out_dir, basename)
                     chunk.proc_time = time.time() - t_load
-                    reused_count += 1
+                    stats.record(chunk.status)
 
             print(chunk.format_table_row(total_chunks))
 
@@ -490,21 +559,12 @@ class ChunkList:
             if chunk.index != last_target_idx and pause_sec > 0:
                 current_time_sec += pause_sec
 
-        total_elapsed = time.time() - batch_start_time
+        stats.elapsed_sec = time.time() - batch_start_time
         print("-" * 110)
-        if clean_existing:
-            print(f"Summary: {cleaned_count} cleaned, {skipped_count} skipped ({total_chunks} total chunks) in {total_elapsed:.1f}s")
-        else:
-            print(f"Summary: {synthesized_count} synthesized, {reused_count} reused, {skipped_count} skipped ({total_chunks} total chunks) in {total_elapsed:.1f}s")
+        print(stats.format_summary(clean_existing=clean_existing))
         print("=" * 110)
 
-        return {
-            "synthesized": synthesized_count,
-            "reused": reused_count,
-            "skipped": skipped_count,
-            "cleaned": cleaned_count,
-            "total": total_chunks,
-        }
+        return stats
 
     def join_audio(
         self,

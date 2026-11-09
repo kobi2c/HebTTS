@@ -75,7 +75,11 @@ def run_all() -> int:
             test_fn()
             passed += 1
         except Exception as e:
-            print(f"❌ FAIL: {name} - {e}")
+            import traceback
+            err_msg = str(e) if str(e) else type(e).__name__
+            print(f"\n❌ FAIL: {name} ({err_msg})")
+            traceback.print_exc()
+            print()
             failed += 1
 
     elapsed = time.time() - start

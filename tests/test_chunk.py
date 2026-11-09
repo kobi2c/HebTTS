@@ -2,7 +2,6 @@ import sys
 import tempfile
 from pathlib import Path
 import numpy as np
-import soundfile as sf
 
 # Ensure project root is in sys.path
 root_dir = Path(__file__).resolve().parent.parent
@@ -10,6 +9,7 @@ if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 import tests.setup_env  # noqa: F401
+import soundfile as sf
 
 from config import (
     Config,
@@ -17,6 +17,7 @@ from config import (
     RangeList,
     ChainMode,
     ChunkStatus,
+    ChunkStats,
     Chunk,
     ChunkList,
     split_text,
@@ -25,21 +26,54 @@ from config import (
 
 
 def test_chunk_status_int_enum():
-    assert ChunkStatus.PENDING == 0
-    assert ChunkStatus.SYNTHESIZED == 1
-    assert ChunkStatus.REUSED == 2
-    assert ChunkStatus.CLEANED == 3
-    assert ChunkStatus.SKIPPED == 4
-    assert ChunkStatus.NOT_FOUND == 5
+    assert str(ChunkStatus.CREATED_S) == "CREATED_S"
+    assert ChunkStatus.CREATED_S.name == "CREATED_S"
+    assert str(ChunkStatus.CREATED_T) == "CREATED_T"
+    assert ChunkStatus.CREATED_T.name == "CREATED_T"
 
-    assert str(ChunkStatus.SYNTHESIZED) == "SYNTHESIZED"
-    assert ChunkStatus.SYNTHESIZED.name == "SYNTHESIZED"
 
     # String & integer lookup
-    assert ChunkStatus("synthesized") == ChunkStatus.SYNTHESIZED
+    assert ChunkStatus("created_s") == ChunkStatus.CREATED_S
+    assert ChunkStatus("created_t") == ChunkStatus.CREATED_T
     assert ChunkStatus("REUSED") == ChunkStatus.REUSED
-    assert ChunkStatus(3) == ChunkStatus.CLEANED
+    assert ChunkStatus(12) == ChunkStatus.CLEANED
+    assert ChunkStatus(2 ) == ChunkStatus.CREATED_T
     print("[PASS] ChunkStatus IntEnum and string/int conversion verified.")
+
+
+def test_chunk_stats():
+    stats = ChunkStats(total=5)
+    assert stats.total == 5
+    assert stats.created == 0
+    assert stats.created_s == 0
+    assert stats.created_t == 0
+
+    stats.record(ChunkStatus.CREATED_S)
+    stats.record(ChunkStatus.CREATED_T)
+    stats.record(ChunkStatus.REUSED)
+    stats.record(ChunkStatus.SKIPPED)
+    stats.record(ChunkStatus.CLEANED)
+    stats.elapsed_sec = 1.23
+
+    assert stats.created   == 2
+    assert stats.created_s == 1
+    assert stats.created_t == 1
+    assert stats.reused    == 1
+    assert stats.skipped   == 1
+    assert stats.cleaned   == 1
+
+    summary = stats.format_summary()
+    assert summary == "Summary: 2 created (T: 1), 1 reused, 1 skipped (5 total chunks) in 1.2s"
+
+    stats2 = ChunkStats(total=3, created_s=2, reused=1, elapsed_sec=0.5)
+    assert stats2.format_summary() == "Summary: 2 created, 1 reused, 0 skipped (3 total chunks) in 0.5s"
+
+    stats_clean = ChunkStats(total=3, cleaned=1, skipped=1, elapsed_sec=0.3)
+    assert stats_clean.format_summary(clean_existing=True) == "Summary: 1 cleaned, 1 skipped (3 total chunks) in 0.3s"
+
+    assert stats_clean.cleaned    == 1
+
+    print("[PASS] ChunkStats recording, formatting, and dict access verified.")
 
 
 def test_split_text_and_srt_formatting():
@@ -163,7 +197,7 @@ def test_chunk_list_join_audio_and_save():
             config=Config(pause_duration=0.5),
             text="שורה ראשונה",
             audio=np.ones(sr, dtype=np.float32) * 0.1,  # 1s
-            status=ChunkStatus.SYNTHESIZED,
+            status=ChunkStatus.CREATED_S,
             duration=1.0,
             start_time=0.0,
             end_time=1.0,
@@ -173,7 +207,7 @@ def test_chunk_list_join_audio_and_save():
             config=Config(pause_duration=0.5),
             text="שורה שנייה",
             audio=np.ones(sr, dtype=np.float32) * 0.2,  # 1s
-            status=ChunkStatus.SYNTHESIZED,
+            status=ChunkStatus.CREATED_S,
             duration=1.0,
             start_time=1.5,
             end_time=2.5,
@@ -251,14 +285,61 @@ def test_chunk_list_resolve_prompt_chaining():
     print("[PASS] ChunkList sequential prompt chaining resolution verified.")
 
 
+def test_chunk_input_override():
+    from unittest.mock import MagicMock
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        out_dir = Path(tmp_dir)
+        cfg = Config()
+        chunk = Chunk(index=1, config=cfg, text="טקסט מקורי")
+
+        # 1. input_path verification
+        inp_path = chunk.input_path(out_dir, "test")
+        assert inp_path.name == "test_001.input.txt"
+        assert not inp_path.exists()
+
+        mock_vm = MagicMock()
+        mock_model = MagicMock()
+        mock_model.last_eos = (100, 200)
+        mock_vm.page.load_model_if_needed.return_value = (mock_model, MagicMock(), MagicMock(), MagicMock())
+        mock_vm.synthesize_chunk.return_value = np.ones(24000, dtype=np.float32) * 0.1
+
+        # 2. Normal synthesize without .input.txt -> CREATED_S
+        chunk.synthesize(mock_vm, out_dir, "test")
+        assert chunk.status == ChunkStatus.CREATED_S
+        assert chunk.text == "טקסט מקורי"
+        assert (out_dir / "test_001.txt").read_text(encoding="utf-8") == "טקסט מקורי"
+
+        # 3. Create .input.txt with IDENTICAL text -> still CREATED_S
+        inp_path.write_text("טקסט מקורי", encoding="utf-8")
+        chunk.synthesize(mock_vm, out_dir, "test")
+        assert chunk.status == ChunkStatus.CREATED_S
+        assert chunk.text == "טקסט מקורי"
+
+        # 4. Create .input.txt with DIFFERENT text -> CREATED_T and chunk.text updated
+        inp_path.write_text("טקסט שונה שנדרס", encoding="utf-8")
+        chunk.synthesize(mock_vm, out_dir, "test")
+        assert chunk.status == ChunkStatus.CREATED_T
+        assert chunk.text == "טקסט שונה שנדרס"
+        assert (out_dir / "test_001.txt").read_text(encoding="utf-8") == "טקסט שונה שנדרס"
+
+        # Verify table row shows CREATED_T
+        row = chunk.format_table_row(1)
+        assert "CREATED_T" in row
+
+    print("[PASS] Chunk text override from .input.txt verified.")
+
+
 def test_chunk_and_chunk_list():
     test_chunk_status_int_enum()
+    test_chunk_stats()
     test_split_text_and_srt_formatting()
     test_chunk_paths_and_table_row()
     test_chunk_file_operations_and_clean()
     test_chunk_list_collection_and_from_blocks()
     test_chunk_list_join_audio_and_save()
     test_chunk_list_resolve_prompt_chaining()
+    test_chunk_input_override()
 
 
 if __name__ == "__main__":

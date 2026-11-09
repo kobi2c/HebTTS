@@ -32,3 +32,28 @@ for mod in [
             __import__(mod)
         except ImportError:
             sys.modules[mod] = MagicMock()
+
+if isinstance(sys.modules.get("torchaudio"), MagicMock):
+    ta_mock = sys.modules["torchaudio"]
+    ta_mock.save.side_effect = lambda filepath, *args, **kwargs: Path(filepath).touch()
+
+if isinstance(sys.modules.get("soundfile"), MagicMock):
+    import numpy as np
+    sf_mock = sys.modules["soundfile"]
+    _mock_audio_store = {}
+
+    def _mock_sf_write(filepath, data=None, sr=24000, **kwargs):
+        p = Path(filepath).resolve()
+        p.touch()
+        if data is not None:
+            _mock_audio_store[p] = (np.array(data, dtype=np.float32), sr)
+
+    def _mock_sf_read(filepath, *args, **kwargs):
+        p = Path(filepath).resolve()
+        if p in _mock_audio_store:
+            arr, sr = _mock_audio_store[p]
+            return arr.copy(), sr
+        return np.ones(24000, dtype=np.float32) * 0.1, 24000
+
+    sf_mock.write.side_effect = _mock_sf_write
+    sf_mock.read.side_effect = _mock_sf_read

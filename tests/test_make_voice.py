@@ -302,12 +302,26 @@ def test_voice_maker_table_progress_output():
 
         # Verify rows
         assert "SKIPPED" in out
-        assert "SYNTHESIZED" in out
+        assert "CREATED_S" in out
         assert "195 -> 425 (+230)" in out
 
         # Verify summary
-        assert "Summary: 1 synthesized, 0 reused, 2 skipped (3 total chunks)" in out
+        assert "Summary: 1 created, 0 reused, 2 skipped (3 total chunks)" in out
         assert mock_model.verbose is False
+
+        # Test text override in make_voice table progress
+        for f in out_dir.iterdir():
+            f.unlink()
+        override_file = out_dir / "table_test_002.input.txt"
+        override_file.write_text("שורה שתיים שנדרסה", encoding="utf-8")
+
+        buf_override = io.StringIO()
+        with redirect_stdout(buf_override):
+            vm.run(["-i", str(mki_file), "--range-only", "2", "-o", str(out_dir)])
+        out_override = buf_override.getvalue()
+
+        assert "CREATED_T" in out_override
+        assert "Summary: 1 created (T: 1), 0 reused, 2 skipped (3 total chunks)" in out_override
 
     print("[PASS] VoiceMaker structured table progress and summary verified.")
 
