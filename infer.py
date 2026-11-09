@@ -176,7 +176,7 @@ def infer(checkpoint_path, output_dir, texts, prompt_text, prompt_audio, top_k=5
 
 def get_args():
     parser = argparse.ArgumentParser()
-    
+
     parser.add_argument(
         "--csv_path",
         type=str,
@@ -229,7 +229,7 @@ def get_args():
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="ckpt.pt",
+        default="checkpoints/checkpoint_01.pt",
         help="Path to the saved checkpoint.",
     )
 
@@ -249,10 +249,10 @@ def get_args():
 
 
     args = parser.parse_args()
-    
+
     if args.csv_path is None and not args.text:
         parser.error("argument --text is required if --csv_path is not provided")
-        
+
     return args
 
 
@@ -275,7 +275,7 @@ def jupyter_demo(text, speaker):
     except:
         print(f"Invalid speaker {speaker}. Should be defined at speakers.yaml.")
 
-    audio_prompt = str(Path(SPEAKER_PATH).parent / speaker["audio-prompt"])
+    audio_prompt = str(Path(SPEAKER_PATH).parent / speaker["audio-file"])
 
     audio_prompts = list()
     encoded_frames = tokenize_audio(audio_tokenizer, audio_prompt)
@@ -283,9 +283,9 @@ def jupyter_demo(text, speaker):
     audio_prompts = torch.concat(audio_prompts, dim=-1).transpose(2, 1)
     audio_prompts = audio_prompts.to(device)
 
-    text_without_space = [replace_chars(f"{speaker['text-prompt']} {text}").strip().replace(" ", "_")]
+    text_without_space = [replace_chars(f"{speaker['audio-text']} {text}").strip().replace(" ", "_")]
     tokens = alef_bert_tokenizer._tokenize(text_without_space)
-    prompt_text_without_space = [replace_chars(f"{speaker['text-prompt']}").strip().replace(" ", "_")]
+    prompt_text_without_space = [replace_chars(f"{speaker['audio-text']}").strip().replace(" ", "_")]
     prompt_tokens = alef_bert_tokenizer._tokenize(prompt_text_without_space)
 
     text_tokens, text_tokens_lens = text_collater(
@@ -332,7 +332,7 @@ if __name__ == '__main__':
     except:
         print(f"Invalid speaker {args.speaker}. Should be defined at speakers.yaml.")
 
-    audio_prompt = str(Path(args.speaker_yaml).parent / speaker["audio-prompt"])
+    audio_prompt = str(Path(args.speaker_yaml).parent / speaker["audio-file"])
 
     device, model, text_collater, audio_tokenizer, alef_bert_tokenizer, audio_prompts = prepare_inference(
         args.checkpoint, args, audio_prompt
@@ -354,7 +354,7 @@ if __name__ == '__main__':
     infer_texts(
         texts_with_filenames,
         args.output_dir,
-        speaker["text-prompt"],
+        speaker["audio-text"],
         device,
         model,
         text_collater,
@@ -365,4 +365,3 @@ if __name__ == '__main__':
         temperature=1,
         args=args,
     )
-

@@ -1,13 +1,10 @@
 osim:
   audio-file: "osim.wav"
   audio-text: "אני משתדל מאוד שכל חסות תהיה מיוחדת ושונה"
-
 geek:
   audio-file: "geek.wav"
   audio-text: "מביא הרבה מהסיבות"
-  
 
 shaul:
   audio-file: "shaul.wav"
   audio-text: "ובשביל להבין למה מחיר הדלק כל כך עלה, צריך לחזור שנתיים אחורנית."
-
