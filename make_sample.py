@@ -507,7 +507,7 @@ class SampleMaker:
 
         model, _ = self.load_model(checkpoint_path, device)
         text_collater = get_text_token_collater(self.tokens_file)
-        audio_tokenizer = AudioTokenizer(mbd=self.mbd)
+        audio_tokenizer = AudioTokenizer(mbd=self.mbd, device=device)
         alef_bert_tokenizer = AlefBERTRootTokenizer(vocab_file=self.vocab_file)
 
         # Encode prompt audio

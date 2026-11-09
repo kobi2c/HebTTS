@@ -47,7 +47,7 @@ def prepare_inference(checkpoint_path, args, prompt_audio):
 
     model, text_tokens = load_model(checkpoint_path, device)
     text_collater = get_text_token_collater(args.tokens_file)
-    audio_tokenizer = AudioTokenizer(mbd=args.mbd)
+    audio_tokenizer = AudioTokenizer(mbd=args.mbd, device=device)
     alef_bert_tokenizer = AlefBERTRootTokenizer(vocab_file=args.vocab_file)
 
     audio_prompts = []
@@ -111,7 +111,7 @@ def infer(checkpoint_path, output_dir, texts, prompt_text, prompt_audio, top_k=5
     model, text_tokens = load_model(checkpoint_path, device)
     text_collater = get_text_token_collater(args.tokens_file)
 
-    audio_tokenizer = AudioTokenizer(mbd=args.mbd)
+    audio_tokenizer = AudioTokenizer(mbd=args.mbd, device=device)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     alef_bert_tokenizer = AlefBERTRootTokenizer(vocab_file=args.vocab_file)
@@ -254,7 +254,7 @@ def jupyter_demo(text, speaker):
     model, text_tokens = load_model(CHECKPOINT_PATH, device)
     text_collater = get_text_token_collater(TOKENS_FILE)
 
-    audio_tokenizer = AudioTokenizer(mbd=True)
+    audio_tokenizer = AudioTokenizer(mbd=True, device=device)
 
     alef_bert_tokenizer = AlefBERTRootTokenizer(vocab_file=VOCAB_PATH)
 

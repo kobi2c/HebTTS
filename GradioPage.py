@@ -124,8 +124,8 @@ class GradioPage:
             print("Model loaded successfully.")
 
         if self.audio_tokenizer is None or self.mbd != mbd_mode:
-            print(f"Initializing AudioTokenizer (MBD={mbd_mode.name})...")
-            self.audio_tokenizer = AudioTokenizer(mbd=bool(mbd_mode))
+            print(f"Initializing AudioTokenizer (MBD={mbd_mode.name}) on {self.device}...")
+            self.audio_tokenizer = AudioTokenizer(mbd=bool(mbd_mode), device=self.device)
             self.mbd = mbd_mode
 
         if self.text_collater is None:

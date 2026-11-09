@@ -422,30 +422,47 @@ class AudioTokenizer:
             device: Any = None,
     ) -> None:
 
+        if not device:
+            device = torch.device("cpu")
+            if torch.cuda.is_available():
+                device = torch.device("cuda:0")
+        elif isinstance(device, str):
+            device = torch.device(device)
+
+        self._device = device
+
         # Instantiate a pretrained EnCodec model
         model = EncodecModel.encodec_model_24khz()
         model.set_target_bandwidth(6.0)
         remove_encodec_weight_norm(model)
 
-        if mbd:
-            from audiocraft.models import MultiBandDiffusion
-            self.mbd = MultiBandDiffusion.get_mbd_24khz(bw=6.0)
-
-        if not device:
-            device = torch.device("cpu")
-            if torch.cuda.is_available():
-                device = torch.device("cuda:0")
-
-        self._device = device
-
         self.codec = model.to(device)
         self.sample_rate = model.sample_rate
         self.channels = model.channels
 
+        if mbd:
+            from audiocraft.models import MultiBandDiffusion
+            self.mbd = MultiBandDiffusion.get_mbd_24khz(bw=6.0, device=device)
+        else:
+            self.mbd = None
 
     @property
     def device(self):
         return self._device
+
+    def to(self, device: Any) -> "AudioTokenizer":
+        """Moves both EnCodec and MultiBandDiffusion models to the specified device."""
+        device = torch.device(device)
+        self._device = device
+        self.codec = self.codec.to(device)
+        if self.mbd is not None:
+            self.mbd.device = device
+            self.mbd.codec_model = self.mbd.codec_model.to(device)
+            for dp in self.mbd.DPs:
+                dp.model = dp.model.to(device)
+                if hasattr(dp.schedule, "betas"):
+                    dp.schedule.betas = dp.schedule.betas.to(device)
+        return self
 
     def encode(self, wav: torch.Tensor) -> torch.Tensor:
         res = self.codec.encode(wav.to(self.device))
@@ -455,7 +472,10 @@ class AudioTokenizer:
         return self.codec.decode(frames)
 
     def mbd_decode(self, frames: torch.Tensor) -> torch.Tensor:
-        return self.mbd.tokens_to_wav(frames)
+        if self.mbd is None:
+            raise RuntimeError("MultiBandDiffusion is not initialized on this AudioTokenizer.")
+        mbd_device = getattr(self.mbd, "device", self.device)
+        return self.mbd.tokens_to_wav(frames.to(mbd_device))
 
 
 
