@@ -33,7 +33,7 @@ from config import (
     base64_to_audio,
 )
 from GradioPage import GradioPage
-from sample import Sampler
+from make_sample import SampleMaker
 from valle.data import AudioTokenizer, tokenize_audio
 from valle.data.collation import get_text_token_collater
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
@@ -127,7 +127,7 @@ class VoiceMaker:
     def __init__(
         self,
         page: Optional[GradioPage] = None,
-        sampler: Optional[Sampler] = None,
+        sampler: Optional[SampleMaker] = None,
         input: Optional[Union[str, Path]] = None,
         base_config: Optional[str] = None,
         output_dir: Optional[Union[str, Path]] = None,
@@ -142,7 +142,7 @@ class VoiceMaker:
         chain_speaker: Optional[ChainMode] = None,
     ) -> None:
         self.page: GradioPage = page or GradioPage()
-        self.sampler: Sampler = sampler or self.page.sampler
+        self.sampler: SampleMaker = sampler or self.page.sampler
         self.input: Optional[Union[str, Path]] = input
         self.base_config: Optional[str] = base_config
         self.output_dir: Optional[Union[str, Path]] = output_dir

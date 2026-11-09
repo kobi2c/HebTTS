@@ -11,7 +11,7 @@ Mounting `%CD%:/app` ensures that scripts and generated outputs sync with your h
 > ./docker-run.sh
 >
 > # Pass custom commands/arguments:
-> docker-run.bat python sample.py --speaker geek --text "שלום עולם"
+> docker-run.bat python make_sample.py --speaker geek --text "שלום עולם"
 > ```
 > Or use Docker Compose:
 > ```bash
@@ -26,22 +26,22 @@ docker-run  python GradioPage.py
 ```
 Open your browser at `http://localhost:7860`.
 
-### 2. Quick Sample Generator (`sample.py`)
+### 2. Quick Sample Generator (`make_sample.py`)
 ```bash
 # Default run (shaul speaker, reads samples/sample.txt, saves to samples/sample.wav)
-docker-run python sample.py
+docker-run python make_sample.py
 
 # List available speakers
-docker-run python sample.py --speaker-list
+docker-run python make_sample.py --speaker-list
 
 # List available checkpoints
-docker-run python sample.py --checkpoint-list
+docker-run python make_sample.py --checkpoint-list
 
 # Custom text, speaker, and output (supports Hebrew Nikud)
-docker-run python sample.py --speaker geek --text "שָׁלוֹם עָלֵיכֶם" --output sample.wav
+docker-run python make_sample.py --speaker geek --text "שָׁלוֹם עָלֵיכֶם" --output sample.wav
 
 # Synthesize from text file (defaults output to <filename>.wav)
-docker-run python sample.py --input samples/sample.txt
+docker-run python make_sample.py --input samples/sample.txt
 ```
 
 ### 3. Download Model Checkpoint

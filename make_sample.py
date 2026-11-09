@@ -16,11 +16,11 @@ from utils import AttributeDict
 from nikud_converter import convert_nikud_text
 from config import SpeakerStore, CheckpointStore, Format
 
-__all__ = ["Sampler", "SamplerParser"]
+__all__ = ["SampleMaker", "SampleMakerParser", "SampleMake", "Sampler", "SamplerParser"]
 
 
-class SamplerParser(argparse.ArgumentParser):
-    """Command line argument parser for Sampler."""
+class SampleMakerParser(argparse.ArgumentParser):
+    """Command line argument parser for SampleMaker."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(
@@ -115,7 +115,7 @@ class SamplerParser(argparse.ArgumentParser):
         )
 
 
-class Sampler:
+class SampleMaker:
     DEFAULT_TOKENS_FILE  = "tokenizer/unique_words_tokens_all.k2symbols"
     DEFAULT_VOCAB_FILE   = "tokenizer/vocab.txt"
 
@@ -357,9 +357,9 @@ class Sampler:
                     segments.append(silence)
         return torch.cat(segments, dim=-1) if segments else torch.zeros((1, 0))
 
-    def create_parser(self) -> SamplerParser:
-        """Creates and returns the command line argument parser for Sampler."""
-        return SamplerParser()
+    def create_parser(self) -> SampleMakerParser:
+        """Creates and returns the command line argument parser for SampleMaker."""
+        return SampleMakerParser()
 
     def parse_args(
         self,
@@ -547,5 +547,10 @@ class Sampler:
         return saved_path
 
 
+SampleMake = SampleMaker
+Sampler = SampleMaker
+SamplerParser = SampleMakerParser
+
+
 if __name__ == "__main__":
-    Sampler().run()
+    SampleMaker().run()

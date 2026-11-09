@@ -1,18 +1,13 @@
-import logging
 import sys
 import warnings
 from pathlib import Path
 from unittest.mock import MagicMock
 
-# Silence xformers C++/CUDA incompatibility warning (HebTTS does not use xformers C++ ops)
-logging.getLogger("xformers").setLevel(logging.ERROR)
-
 # Silence torchvision image extension warning since TTS does not use vision IO
 warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 
-# Silence deprecated weight_norm and custom_fwd/bwd FutureWarnings from dependencies
+# Silence deprecated weight_norm FutureWarnings from dependencies
 warnings.filterwarnings("ignore", category=FutureWarning, module=r".*weight_norm.*")
-warnings.filterwarnings("ignore", category=FutureWarning, module=r".*xformers.*")
 
 # Ensure project root is in sys.path
 root_dir = Path(__file__).resolve().parent.parent

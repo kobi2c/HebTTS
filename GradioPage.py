@@ -23,7 +23,7 @@ from config import (
     SpeakerStore,
     CheckpointStore,
 )
-from sample import Sampler
+from make_sample import SampleMaker
 from valle.data import AudioTokenizer, tokenize_audio
 from valle.data.collation import get_text_token_collater
 from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
@@ -31,8 +31,8 @@ from nikud_converter import convert_nikud_text, has_nikud
 
 
 class GradioPage:
-    def __init__(self, sampler: Optional[Sampler] = None, config: Optional[Config] = None) -> None:
-        self.sampler            : Sampler                         = sampler or Sampler()
+    def __init__(self, sampler: Optional[SampleMaker] = None, config: Optional[Config] = None) -> None:
+        self.sampler            : SampleMaker                     = sampler or SampleMaker()
         self.config             : Config                          = (config or Config()).reset()
         self.checkpoint         : Optional[str]                   = None
         self.model              : Optional[torch.nn.Module]       = None

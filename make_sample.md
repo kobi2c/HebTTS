@@ -1,6 +1,6 @@
-# HebTTS Sample Generator (`sample.py`)
+# HebTTS Sample Generator (`make_sample.py`)
 
-`sample.py` provides an easy-to-use CLI and Python API (`Sampler` class) to synthesize Hebrew speech using the VALL-E model and reference audio prompts.
+`make_sample.py` provides an easy-to-use CLI and Python API (`SampleMaker` class) to synthesize Hebrew speech using the VALL-E model and reference audio prompts.
 
 ---
 
@@ -12,10 +12,10 @@ Run commands from the project root directory.
 
 ```bash
 # List available speakers (ID, audio prompt, reference text)
-docker-run python sample.py --speaker-list
+docker-run python make_sample.py --speaker-list
 
 # List predefined checkpoints and their download status
-docker-run python sample.py --checkpoint-list
+docker-run python make_sample.py --checkpoint-list
 ```
 
 ### 2. Synthesize from Text File
@@ -23,7 +23,7 @@ docker-run python sample.py --checkpoint-list
 When using `--input`, the output audio file defaults automatically to the same directory and stem as the input file (e.g. `path/to/sample.txt` -> `path/to/sample.wav`):
 
 ```bash
-docker-run python sample.py --input sample.txt
+docker-run python make_sample.py --input sample.txt
 ```
 
 > **Note**: Multi-line files are synthesized sentence-by-sentence with a 300ms pause inserted between lines, preventing attention length overflow.
@@ -31,7 +31,7 @@ docker-run python sample.py --input sample.txt
 ### 3. Synthesize Direct Text
 
 ```bash
-docker-run python sample.py --speaker 1 --text "שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית." --output sample.wav
+docker-run python make_sample.py --speaker 1 --text "שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית." --output sample.wav
 ```
 
 
@@ -62,16 +62,16 @@ docker-run python sample.py --speaker 1 --text "שלום, זהו מבחן דיב
 ### Selecting Speaker by Number or Name
 ```bash
 # Using numeric index (1: osim, 2: geek, 3: shaul)
-docker-run python sample.py --speaker 2 --input sample.txt
+docker-run python make_sample.py --speaker 2 --input sample.txt
 
 # Using speaker name
-docker-run python python sample.py --speaker shaul --input sample.txt
+docker-run python python make_sample.py --speaker shaul --input sample.txt
 ```
 
 ### Custom Voice Cloning
 To clone a custom voice, supply both the prompt audio and its corresponding transcript:
 ```bash
-docker-run python sample.py --clone-wav clone.wav --clone-txt clone.txt --input sample.txt
+docker-run python make_sample.py --clone-wav clone.wav --clone-txt clone.txt --input sample.txt
 ```
 
 #### Preparing Audio Prompts (MP3 to WAV)
@@ -89,22 +89,22 @@ When your input text contains Hebrew Nikud (vocalization marks like `שָׁלו�
 
 ### Adjusting Generation Parameters
 ```bash
-docker-run python sample.py --input sample.txt --temperature 0.8 --top-k 30 --mbd
+docker-run python make_sample.py --input sample.txt --temperature 0.8 --top-k 30 --mbd
 ```
 
 ---
 
 ## Python API Usage
 
-The `Sampler` class can also be integrated directly into Python scripts:
+The `SampleMaker` class can also be integrated directly into Python scripts:
 
 ```python
-from sample import Sampler
+from make_sample import SampleMaker
 
-sampler = Sampler()
+maker = SampleMaker()
 
 # Run via programmatic arguments
-sampler.run([
+maker.run([
     "--speaker", "shaul",
     "--input", "sample.txt",
     "--output", "output.wav"
@@ -114,11 +114,11 @@ sampler.run([
 ## All Samples
 
 ```bash
-docker-run python sample.py --speaker-list
-docker-run python sample.py --checkpoint-list
-docker-run python sample.py
-docker-run python sample.py --speaker geek
-docker-run python sample.py --speaker 3
-docker-run python sample.py --text "שלום לכולם"
-docker-run python sample.py --clone-wav samples/clone.wav --clone-txt samples/clone.txt
+docker-run python make_sample.py --speaker-list
+docker-run python make_sample.py --checkpoint-list
+docker-run python make_sample.py
+docker-run python make_sample.py --speaker geek
+docker-run python make_sample.py --speaker 3
+docker-run python make_sample.py --text "שלום לכולם"
+docker-run python make_sample.py --clone-wav samples/clone.wav --clone-txt samples/clone.txt
 ```

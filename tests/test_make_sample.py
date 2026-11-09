@@ -15,14 +15,19 @@ if str(root_dir) not in sys.path:
 import tests.setup_env  # noqa: F401
 
 from config import Format
-from sample import Sampler, SamplerParser
+from make_sample import SampleMaker, SampleMakerParser, SampleMake, Sampler, SamplerParser
 
 
 def test_sampler_args():
+    # 0. Aliases verified
+    assert SampleMake is SampleMaker
+    assert Sampler is SampleMaker
+    assert SamplerParser is SampleMakerParser
+
     # 1. Default constructor fields
-    s = Sampler()
-    assert s.tokens_file == Sampler.DEFAULT_TOKENS_FILE
-    assert s.vocab_file == Sampler.DEFAULT_VOCAB_FILE
+    s = SampleMaker()
+    assert s.tokens_file == SampleMaker.DEFAULT_TOKENS_FILE
+    assert s.vocab_file == SampleMaker.DEFAULT_VOCAB_FILE
     assert s.speaker == "1"
     assert s.checkpoint == "1"
     assert s.input_file is None
@@ -37,7 +42,7 @@ def test_sampler_args():
     assert s.nikud_converter is True
     assert s.speaker_list is False
     assert s.checkpoint_list is False
-    assert isinstance(s.create_parser(), SamplerParser)
+    assert isinstance(s.create_parser(), SampleMakerParser)
 
     # 2. parse_args with list
     parsed = s.parse_args([
@@ -67,7 +72,7 @@ def test_sampler_args():
     assert s.nikud_converter is False
 
     # 3. Direct constructor initialization with fields
-    s2 = Sampler(
+    s2 = SampleMaker(
         speaker="osim",
         checkpoint="2",
         text="בדיקה ישירה",
@@ -89,7 +94,7 @@ def test_sampler_args():
     assert s2.nikud_converter is False
 
     # 4. parse_args with existing Namespace
-    parser = SamplerParser()
+    parser = SampleMakerParser()
     ns = parser.parse_args(["--speaker", "1", "--text", "בדיקת Namespace"])
     s2.parse_args(ns)
     assert s2.speaker == "1"
@@ -103,25 +108,25 @@ def test_sampler_args():
     s.parse_args(["--format", "both"])
     assert s.format == [Format.WAV, Format.MP3]
 
-    print("[PASS] Sampler CLI, instance fields, and parse_args verified.")
+    print("[PASS] SampleMaker CLI, instance fields, and parse_args verified.")
 
 
 def test_sampler_list_commands():
-    s_spk = Sampler(speaker_list=True)
+    s_spk = SampleMaker(speaker_list=True)
     f = io.StringIO()
     with redirect_stdout(f):
         res = s_spk.run()
     assert res is None
     assert "Available speakers:" in f.getvalue()
 
-    s_cp = Sampler(checkpoint_list=True)
+    s_cp = SampleMaker(checkpoint_list=True)
     f = io.StringIO()
     with redirect_stdout(f):
         res = s_cp.run()
     assert res is None
     assert "Available checkpoints:" in f.getvalue()
 
-    print("[PASS] Sampler --speaker-list and --checkpoint-list execution verified.")
+    print("[PASS] SampleMaker --speaker-list and --checkpoint-list execution verified.")
 
 
 def test_sampler_run_execution():
@@ -130,12 +135,12 @@ def test_sampler_run_execution():
         out_wav = tmp_path / "test_out.wav"
         out_mp3 = tmp_path / "test_out.mp3"
 
-        s = Sampler(speaker="1", text="שלום עולם", output=out_wav)
+        s = SampleMaker(speaker="1", text="שלום עולם", output=out_wav)
         s.load_model = MagicMock(return_value=(MagicMock(), "mock_tokens"))
         s.synthesize = MagicMock(return_value=torch.zeros((1, 24000)))
 
-        with patch("sample.tokenize_audio", return_value=[[torch.zeros((1, 8, 10))]]), \
-             patch("sample.AudioTokenizer"):
+        with patch("make_sample.tokenize_audio", return_value=[[torch.zeros((1, 8, 10))]]), \
+             patch("make_sample.AudioTokenizer"):
             # 1. Run with instance fields (WAV output)
             result = s.run()
             assert result == out_wav
@@ -152,11 +157,11 @@ def test_sampler_run_execution():
             assert (tmp_path / "both_out.wav").exists()
             assert (tmp_path / "both_out.mp3").exists()
 
-    print("[PASS] Sampler.run() execution without args dependency verified.")
+    print("[PASS] SampleMaker.run() execution without args dependency verified.")
 
 
 if __name__ == "__main__":
     test_sampler_args()
     test_sampler_list_commands()
     test_sampler_run_execution()
-    print("\n🎉 ALL TESTS IN tests/test_sample.py PASSED SUCCESSFULLY!")
+    print("\n🎉 ALL TESTS IN tests/test_make_sample.py PASSED SUCCESSFULLY!")

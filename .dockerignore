@@ -1,9 +1,13 @@
 .git
 .venv
+.cache/
 __pycache__
 *.py[cod]
 *$py.class
 *.pt
+*.wav
+*.mp3
 out/
 sample.wav
+
 

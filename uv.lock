@@ -7,6 +7,7 @@ overrides = [
     { name = "av", specifier = ">=12.0.0" },
     { name = "torch", specifier = ">=2.4.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchaudio", specifier = ">=2.4.0", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "xformers", specifier = ">=0.0.35" },
 ]
 
 [[package]]
@@ -693,6 +694,7 @@ dependencies = [
     { name = "torch" },
     { name = "torchaudio" },
     { name = "torchmetrics" },
+    { name = "xformers" },
 ]
 
 [package.metadata]
@@ -710,6 +712,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.1.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchaudio", specifier = ">=2.1.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchmetrics", specifier = ">=1.7.2" },
+    { name = "xformers", specifier = ">=0.0.35" },
 ]
 
 [[package]]
@@ -2598,14 +2601,14 @@ wheels = [
 
 [[package]]
 name = "xformers"
-version = "0.0.22.post7"
+version = "0.0.35"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "torch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3c/b2/9416a89b78b5b8e06bce0d0a04cb76813df4242507690b62eb2b0e57199d/xformers-0.0.22.post7.tar.gz", hash = "sha256:7d237ce3d1b4de68cff3e939991a05f83b5c3213471e9bc2fc986c92beb2184a", size = 3800728, upload-time = "2023-10-25T15:06:49.395Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/de/5a/6e27734bd793adc44d0b8d294e67cfacf4ec590572c1aef51d683fc7a791/xformers-0.0.35.tar.gz", hash = "sha256:f7fc183a58e4bf0e2ae339a18fb1b1d4a37854c0f2545b4f360fef001646ab76", size = 4258182, upload-time = "2026-02-20T20:33:05.417Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/1e/7c0fb63fd444127f308cc5a9ed96e8bb601aef8673edaca2788b8a990f72/xformers-0.0.22.post7-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:479a42055ab23a9cfc0d329656d12cc7e6a6e71b49ae4874bd01d8276dfd47ef", size = 211797981, upload-time = "2023-10-25T15:05:49.014Z" },
-    { url = "https://files.pythonhosted.org/packages/13/40/01386b08c05f9570eea170c378e605484ab839f1e5f6f1ebe0f7f8bbe4f6/xformers-0.0.22.post7-cp311-cp311-win_amd64.whl", hash = "sha256:5fcb0eb6eb0a6b78f6f866ea90ffbef955f8c903afd1e2fd934c1619eabb042e", size = 202078144, upload-time = "2023-10-25T15:05:59.212Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/85/6d71f9b16f2ac647877e66ed4af723b3fbd477806ab8b8a89d39a362b85f/xformers-0.0.35-py39-none-manylinux_2_28_x86_64.whl", hash = "sha256:ccc73c7db9890224ab05f5fb60e2034f9e6c8672a10be0cf00e95cbbae3eda7c", size = 3264751, upload-time = "2026-02-20T20:33:02.444Z" },
+    { url = "https://files.pythonhosted.org/packages/49/0b/88c39c128a05d5b553a67cb9c4c3fc32eefb91f836f838befab9e78f8364/xformers-0.0.35-py39-none-win_amd64.whl", hash = "sha256:57381ce3cbb79b593e6b62cb20a937885345fad2796de2aa6fbb66c033601179", size = 2638618, upload-time = "2026-02-20T20:33:04.104Z" },
 ]

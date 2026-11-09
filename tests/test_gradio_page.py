@@ -21,7 +21,7 @@ from config import (
     SpeakerStore,
 )
 from GradioPage import GradioPage
-from sample import Sampler
+from make_sample import SampleMaker
 
 
 def test_generate_audio_strict_config():
@@ -98,7 +98,7 @@ def test_gradio_page_config_helpers():
 
 
 def test_table_printing():
-    s = Sampler.__new__(Sampler)
+    s = SampleMaker.__new__(SampleMaker)
     s.checkpoints = CheckpointStore()
     s.speakers = SpeakerStore()
     f = io.StringIO()

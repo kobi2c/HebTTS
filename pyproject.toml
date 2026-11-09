@@ -18,6 +18,7 @@ dependencies = [
     "torch>=2.1.0",
     "torchaudio>=2.1.0",
     "torchmetrics>=1.7.2",
+    "xformers>=0.0.35",
 ]
 
 [[tool.uv.index]]
@@ -30,6 +31,7 @@ override-dependencies = [
     "torch>=2.4.0",
     "torchaudio>=2.4.0",
     "av>=12.0.0",
+    "xformers>=0.0.35",
 ]
 
 [tool.uv.sources]
