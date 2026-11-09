@@ -268,9 +268,11 @@ def test_chunk_list_resolve_prompt_chaining():
         assert p_audio == str(c1_wav)
         assert p_txt == "שורה ראשונה"
 
-        # 4. Chunk 2 when chain_speaker=ChainMode.Disabled -> (None, None)
+        # 4. Chunk 2 when chain_speaker=ChainMode.Disabled (or default) -> (None, None)
         p_audio_no_chain, p_txt_no_chain = chunk_list.resolve_prompt(1, out_dir, "test", chain_speaker=ChainMode.Disabled)
         assert p_audio_no_chain is None and p_txt_no_chain is None
+        p_audio_default, p_txt_default = chunk_list.resolve_prompt(1, out_dir, "test")
+        assert p_audio_default is None and p_txt_default is None
 
         # 5. Chunk 3 has different speaker ("shani") -> (None, None)
         # Create chunk 2 files first

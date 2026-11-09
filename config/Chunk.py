@@ -411,7 +411,7 @@ class ChunkList:
         chunk_idx: int,
         output_dir: Union[str, Path],
         basename: str,
-        chain_speaker: ChainMode = ChainMode.Enabled,
+        chain_speaker: ChainMode = ChainMode.Disabled,
     ) -> Tuple[Optional[str], Optional[str]]:
         """
         Resolves prompt audio path and transcript for chunk_idx (0-based list index).

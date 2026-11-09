@@ -102,7 +102,7 @@ class Config:
     seed_number        : int = 420
     randomize_seed     : RandomMode = RandomMode.Enabled
     nikud_converter    : NikudMode = NikudMode.Enabled
-    chain_speaker      : ChainMode = ChainMode.Enabled
+    chain_speaker      : ChainMode = ChainMode.Disabled
 
     def reset(self) -> "Config":
         """Resets all configuration fields in-place to their default values."""
@@ -124,7 +124,7 @@ class Config:
         self.seed_number = 420
         self.randomize_seed = RandomMode.Enabled
         self.nikud_converter = NikudMode.Enabled
-        self.chain_speaker = ChainMode.Enabled
+        self.chain_speaker = ChainMode.Disabled
         return self
 
     def to_dict(self) -> Dict[str, Any]:

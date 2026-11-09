@@ -351,8 +351,22 @@ def test_voice_maker_chain_speaker_execution():
         vm.synthesize_chunk = mock_synth
         vm.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
 
-        # 1. Run with default chaining (chain_speaker=True)
+        # 1. Run with default settings (default chain_speaker=ChainMode.Disabled)
         vm.run(["-i", str(mki_file), "-o", str(out_dir)])
+        assert len(recorded_prompts) == 2
+        # Both chunks use base speaker fallback (prompt_audio is None)
+        assert recorded_prompts[0][0] is None
+        assert recorded_prompts[1][0] is None
+
+        # 2. Run with explicit chain_speaker=ChainMode.Enabled
+        recorded_prompts.clear()
+        for f in out_dir.iterdir():
+            f.unlink()
+
+        vm_chain = VoiceMaker(chain_speaker=ChainMode.Enabled)
+        vm_chain.synthesize_chunk = mock_synth
+        vm_chain.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+        vm_chain.run(["-i", str(mki_file), "-o", str(out_dir)])
         assert len(recorded_prompts) == 2
         # Chunk 1: base speaker fallback (prompt_audio is None)
         assert recorded_prompts[0][0] is None
@@ -360,34 +374,21 @@ def test_voice_maker_chain_speaker_execution():
         assert recorded_prompts[1][0] == str(out_dir / "chain_test_001.wav")
         assert recorded_prompts[1][1] == "שורה ראשונה"
 
-        # 2. Run with chain_speaker=ChainMode.Disabled
+        # 3. Run with MKI directive enabling chain_speaker
         recorded_prompts.clear()
         for f in out_dir.iterdir():
             f.unlink()
 
-        vm_no_chain = VoiceMaker(chain_speaker=ChainMode.Disabled)
-        vm_no_chain.synthesize_chunk = mock_synth
-        vm_no_chain.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
-        vm_no_chain.run(["-i", str(mki_file), "-o", str(out_dir)])
-        assert len(recorded_prompts) == 2
-        # Both chunks use base speaker fallback
-        assert recorded_prompts[0][0] is None
-        assert recorded_prompts[1][0] is None
-
-        # 3. Run with MKI directive disabling chain_speaker
-        recorded_prompts.clear()
-        for f in out_dir.iterdir():
-            f.unlink()
-
-        mki_disabled = tmp_path / "chain_disabled.mki"
-        mki_disabled.write_text("@{\"chain_speaker\": 0}\nשורה ראשונה\nשורה שנייה\n", encoding="utf-8")
+        mki_enabled = tmp_path / "chain_enabled.mki"
+        mki_enabled.write_text("@{\"chain_speaker\": 1}\nשורה ראשונה\nשורה שנייה\n", encoding="utf-8")
         vm_default = VoiceMaker()
         vm_default.synthesize_chunk = mock_synth
         vm_default.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
-        vm_default.run(["-i", str(mki_disabled), "-o", str(out_dir)])
+        vm_default.run(["-i", str(mki_enabled), "-o", str(out_dir)])
         assert len(recorded_prompts) == 2
         assert recorded_prompts[0][0] is None
-        assert recorded_prompts[1][0] is None
+        assert recorded_prompts[1][0] == str(out_dir / "chain_enabled_001.wav")
+        assert recorded_prompts[1][1] == "שורה ראשונה"
 
     print("[PASS] VoiceMaker sequential speaker prompt chaining execution verified.")
 
