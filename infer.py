@@ -96,7 +96,12 @@ def infer_texts(
             audio_path = audio_path.with_suffix(".wav")
 
         if args.mbd:
+            if device.type == "cuda":
+                model.to("cpu")
+                torch.cuda.empty_cache()
             samples = audio_tokenizer.mbd_decode(encoded_frames.transpose(2, 1))
+            if device.type == "cuda":
+                model.to(device)
         else:
             samples = audio_tokenizer.decode([(encoded_frames.transpose(2, 1), None)])
 
@@ -153,9 +158,14 @@ def infer(checkpoint_path, output_dir, texts, prompt_text, prompt_audio, top_k=5
         audio_path = f"{output_dir}/sample_{n}.wav"
 
         if args.mbd:
+            if device.type == "cuda":
+                model.to("cpu")
+                torch.cuda.empty_cache()
             samples = audio_tokenizer.mbd_decode(
                 encoded_frames.transpose(2, 1)
             )
+            if device.type == "cuda":
+                model.to(device)
         else:
             samples = audio_tokenizer.decode(
                 [(encoded_frames.transpose(2, 1), None)]
@@ -300,9 +310,14 @@ def jupyter_demo(text, speaker):
     )
 
 
+    if device.type == "cuda":
+        model.to("cpu")
+        torch.cuda.empty_cache()
     samples = audio_tokenizer.mbd_decode(
         encoded_frames
     )
+    if device.type == "cuda":
+        model.to(device)
 
     torchaudio.save("out.wav", samples[0].cpu(), 24000)
 

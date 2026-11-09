@@ -289,7 +289,21 @@ class SampleMaker:
             )
 
             if mbd:
+                # On systems with <=12GB VRAM (e.g. 8GB GPUs), keeping both VALL-E (~1.8GB)
+                # and MBD (~4.6GB) in VRAM causes Windows WDDM shared GPU memory paging over PCIe,
+                # resulting in extreme slowdowns during diffusion. Offloading VALL-E to CPU
+                # during MBD decode eliminates PCIe thrashing and dramatically speeds up synthesis.
+                is_cuda = (isinstance(device, torch.device) and device.type == "cuda") or (
+                    isinstance(device, str) and "cuda" in device
+                )
+                if is_cuda and torch.cuda.is_available():
+                    model.to("cpu")
+                    torch.cuda.empty_cache()
+
                 samples = audio_tokenizer.mbd_decode(encoded_frames.transpose(2, 1))
+
+                if is_cuda and torch.cuda.is_available():
+                    model.to(device)
             else:
                 samples = audio_tokenizer.decode([(encoded_frames.transpose(2, 1), None)])
 
