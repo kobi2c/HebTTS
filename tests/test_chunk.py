@@ -75,7 +75,7 @@ def test_chunk_paths_and_table_row():
     row = c.format_table_row(5)
     assert "[ 1/5 ]" in row
     assert "PENDING" in row
-    assert "שלום עולם" in row
+    assert "שלום עולם"[::-1] in row
 
     c.start_time = 0.0
     c.end_time = 2.5

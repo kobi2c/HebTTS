@@ -261,15 +261,16 @@ class Chunk:
         return audio_np
 
     def format_table_row(self, total_chunks: int) -> str:
-        """Formats single row string for the CLI progress table."""
-        text_preview = self.text[:35] + "..." if len(self.text) > 35 else self.text
+        """Formats single row string for the CLI progress table with reversed Hebrew and right alignment."""
+        raw_preview = self.text[:35] + "..." if len(self.text) > 35 else self.text
+        text_preview = raw_preview[::-1]
         duration_str = f"{self.duration:.2f}s" if self.duration > 0 else "-"
         proc_str = (
             f"{self.proc_time:.1f}s"
             if self.proc_time > 0
             else ("0.0s" if self.status == ChunkStatus.REUSED else "-")
         )
-        return f"[{self.index:>2}/{total_chunks:<2}]    {self.status.name:<14} {duration_str:<10} {proc_str:<10} {self.tokens_str:<24} {text_preview}"
+        return f"[{self.index:>2}/{total_chunks:<2}]    {self.status.name:<14} {duration_str:<10} {proc_str:<10} {self.tokens_str:<24} {text_preview:>38}"
 
     def to_srt_block(self, srt_index: int) -> str:
         """Formats the chunk into an SRT subtitle cue block."""
@@ -413,9 +414,9 @@ class ChunkList:
         batch_start_time = time.time()
         current_time_sec = 0.0
 
-        print("\n" + "=" * 105)
-        print(f"{'Chunk':<10} {'Status':<14} {'Audio':<10} {'Proc':<10} {'Tokens (Prompt->Total)':<24} Text")
-        print("-" * 105)
+        print("\n" + "=" * 110)
+        print(f"{'Chunk':<10} {'Status':<14} {'Audio':<10} {'Proc':<10} {'Tokens (Prompt->Total)':<24} {'Text':>38}")
+        print("-" * 110)
 
         for chunk_idx, chunk in enumerate(self.chunks):
             if range_only and chunk.index not in target_indices:
@@ -490,12 +491,12 @@ class ChunkList:
                 current_time_sec += pause_sec
 
         total_elapsed = time.time() - batch_start_time
-        print("-" * 105)
+        print("-" * 110)
         if clean_existing:
             print(f"Summary: {cleaned_count} cleaned, {skipped_count} skipped ({total_chunks} total chunks) in {total_elapsed:.1f}s")
         else:
             print(f"Summary: {synthesized_count} synthesized, {reused_count} reused, {skipped_count} skipped ({total_chunks} total chunks) in {total_elapsed:.1f}s")
-        print("=" * 105)
+        print("=" * 110)
 
         return {
             "synthesized": synthesized_count,
