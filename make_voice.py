@@ -16,6 +16,7 @@ import torchaudio
 from config import (
     Config,
     SpeakerMode,
+    SpeakerSample,
     Format,
     MbdMode,
     RandomMode,
@@ -275,12 +276,12 @@ class VoiceMaker:
         if current_block_lines:
             blocks.append((Config.from_dict(current_config.to_dict()), "\n".join(current_block_lines)))
         return blocks
-    def resolve_speaker_prompt(self, config: Config) -> Tuple[str, str]:
+    def resolve_speaker_prompt(self, config: Config) -> SpeakerSample:
         """Resolves prompt audio path and reference transcript from config."""
         spk = config.speaker
         if not spk:
             raise ValueError("No speaker configured.")
-        return spk.resolve_prompt()
+        return spk.sample()
     def synthesize_chunk(
         self,
         chunk_text: str,
@@ -297,11 +298,11 @@ class VoiceMaker:
     ) -> np.ndarray:
         """Synthesizes a single chunk using cached model and prompt representations."""
         if prompt_audio is None or prompt_text is None:
-            resolved_audio, resolved_text = self.resolve_speaker_prompt(config)
+            sample = self.resolve_speaker_prompt(config)
             if prompt_audio is None:
-                prompt_audio = resolved_audio
+                prompt_audio = sample.path
             if prompt_text is None:
-                prompt_text = resolved_text
+                prompt_text = sample.text
 
         # Update cached prompt representations if speaker or audio changed
         if self._cached_prompt_audio != prompt_audio or self._cached_audio_prompts is None:

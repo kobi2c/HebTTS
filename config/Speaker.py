@@ -4,7 +4,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Union, Tuple
 
 
 class SpeakerMode(IntEnum):
@@ -42,6 +42,23 @@ class SpeakerMode(IntEnum):
 
 
 @dataclass
+class SpeakerSample:
+    """Encapsulates a speaker reference sample (id, audio path, transcript text)."""
+    id   : str = "1"
+    path : str = ""
+    text : str = ""
+    Empty: ClassVar["SpeakerSample"] = None
+
+    def as_tuple(self) -> Tuple[str, str, str]:
+        """Returns sample attributes as a (id, path, text) tuple."""
+        return (self.id, self.path, self.text)
+
+    def to_dict(self) -> Dict[str, str]:
+        """Returns sample attributes as a dictionary."""
+        return {"id": self.id, "path": self.path, "text": self.text}
+
+
+@dataclass
 class Speaker:
     """Represents a reference speaker voice base class."""
     id       : str = ""
@@ -72,7 +89,7 @@ class Speaker:
     @property
     def exists(self) -> bool:
         """Returns True if the speaker audio file exists on disk."""
-        return os.path.exists(self.full_path)
+        return bool(self.filename) and os.path.isfile(self.full_path)
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, self.__class__):
@@ -88,8 +105,8 @@ class Speaker:
         """Validates that required speaker fields are properly configured."""
         pass
 
-    def resolve_prompt(self) -> Tuple[str, str]:
-        """Resolves prompt audio path and reference transcript."""
+    def sample(self) -> SpeakerSample:
+        """Resolves prompt audio path and reference transcript as a SpeakerSample."""
         raise NotImplementedError
 
     @property
@@ -97,8 +114,8 @@ class Speaker:
         """Returns UI radio string representing this speaker mode."""
         raise NotImplementedError
 
-    def ui_preview(self) -> Tuple[str, Optional[str], str]:
-        """Returns UI preview tuple (speaker_id, clone_audio, clone_text)."""
+    def ui_preview(self) -> SpeakerSample:
+        """Returns SpeakerSample for UI controls."""
         raise NotImplementedError
 
     def resolve_audio_path(self) -> str:
@@ -248,13 +265,23 @@ class LocalSpeaker(Speaker):
         """Local speakers are always valid."""
         pass
 
-    def resolve_prompt(self) -> Tuple[str, str]:
+    def sample(self) -> SpeakerSample:
         """Resolves prompt audio path and transcript for local speaker."""
-        return self.resolve_audio_path(), self.text
+        return SpeakerSample(
+            id=self.id,
+            path=self.resolve_audio_path(),
+            text=self.text,
+        )
 
-    def ui_preview(self) -> Tuple[str, Optional[str], str]:
-        """Returns (speaker_id, clone_audio, clone_text) for UI controls."""
-        return self.id, None, ""
+    def ui_preview(self) -> SpeakerSample:
+        """Returns SpeakerSample for UI controls."""
+        if not self.id:
+            return SpeakerSample.Empty
+        return SpeakerSample(
+            id=self.id,
+            path="",
+            text="",
+        )
 
     def to_dict(self, embed_data: bool = True) -> Dict[str, Any]:
         d = super().to_dict(embed_data=embed_data)
@@ -282,15 +309,27 @@ class CloneSpeaker(Speaker):
         if not self.text or not self.text.strip():
             raise ValueError(f"No reference transcript text configured for clone speaker '{self.id}'.")
 
-    def resolve_prompt(self) -> Tuple[str, str]:
+    def sample(self) -> SpeakerSample:
         """Validates and resolves prompt audio path and stripped transcript."""
         self.validate()
-        return self.resolve_audio_path(), self.text.strip()
+        return SpeakerSample(
+            id=self.id,
+            path=self.resolve_audio_path(),
+            text=self.text.strip(),
+        )
 
-    def ui_preview(self) -> Tuple[str, Optional[str], str]:
-        """Returns (speaker_id, clone_audio, clone_text) for UI controls."""
-        audio_preview = self.resolve_audio_path() if (self.exists or self.data) else None
-        return "osim", audio_preview, self.text or ""
+    def ui_preview(self) -> SpeakerSample:
+        """Returns SpeakerSample for UI controls."""
+        audio_preview = self.resolve_audio_path() if (self.exists or self.data) else ""
+        text_preview = self.text or ""
+        if not audio_preview and not text_preview and not SpeakerStore.find(self.id):
+            return SpeakerSample.Empty
+        spk_id = self.id if SpeakerStore.find(self.id) else SpeakerStore.default().id
+        return SpeakerSample(
+            id=spk_id,
+            path=audio_preview,
+            text=text_preview,
+        )
 
     def to_dict(self, embed_data: bool = True) -> Dict[str, Any]:
         d = super().to_dict(embed_data=embed_data)
@@ -536,3 +575,7 @@ class SpeakerStore:
                 return spk
 
         return None
+
+# Initialize SpeakerSample.Empty with default speaker from SpeakerStore
+SpeakerSample.Empty = SpeakerSample(id=SpeakerStore.default().id, path="", text="")
+

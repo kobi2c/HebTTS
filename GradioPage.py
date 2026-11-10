@@ -18,6 +18,7 @@ import torchaudio
 from config import (
     Config,
     SpeakerMode,
+    SpeakerSample,
     Format,
     MbdMode,
     RandomMode,
@@ -91,14 +92,14 @@ class GradioPage:
         """Returns list of values from self.config corresponding to the UI stateful components."""
         spk = self.config.speaker
         spk_mode_str = spk.ui_mode if spk else str(SpeakerMode.Local)
-        spk_id, clone_aud, clone_txt = spk.ui_preview() if spk else ("osim", None, "")
+        sample = spk.ui_preview() if spk else SpeakerSample.Empty
 
         return [
             self.config.checkpoint,
             spk_mode_str,
-            spk_id,
-            clone_aud,
-            clone_txt,
+            sample.id,
+            sample.path or None,
+            sample.text,
             self.config.text,
             self.config.pause_duration,
             self.config.temperature,
@@ -200,7 +201,7 @@ class GradioPage:
         if not spk:
             raise gr.Error("Speaker not configured.")
         try:
-            prompt_audio, prompt_text = spk.resolve_prompt()
+            sample = spk.sample()
         except ValueError as e:
             raise gr.Error(str(e))
 
@@ -216,7 +217,7 @@ class GradioPage:
 
         # 4. Tokenize reference audio prompt
         try:
-            encoded_frames = tokenize_audio(audio_tokenizer, prompt_audio)
+            encoded_frames = tokenize_audio(audio_tokenizer, sample.path)
             audio_prompts = torch.concat([encoded_frames[0][0]], dim=-1).transpose(2, 1).to(self.device)
         except Exception as e:
             raise gr.Error(f"Failed to process reference audio: {str(e)}")
@@ -238,7 +239,7 @@ class GradioPage:
                 audio_tokenizer=audio_tokenizer,
                 alef_bert_tokenizer=alef_bert_tokenizer,
                 audio_prompts=audio_prompts,
-                prompt_text=prompt_text,
+                prompt_text=sample.text,
                 device=self.device,
                 top_k=int(cfg.top_k),
                 temperature=float(cfg.temperature),

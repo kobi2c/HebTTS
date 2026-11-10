@@ -8,10 +8,28 @@ if str(root_dir) not in sys.path:
 
 import tests.setup_env  # noqa: F401
 
-from config import Speaker, LocalSpeaker, CloneSpeaker, SpeakerStore, SpeakerMode
+from config import Speaker, LocalSpeaker, CloneSpeaker, SpeakerSample, SpeakerStore, SpeakerMode
 
 
 def test_speaker_data():
+    # Test SpeakerSample defaults and helpers
+    sample_def = SpeakerSample()
+    assert sample_def.id == "1"
+    assert sample_def.path == ""
+    assert sample_def.text == ""
+    assert sample_def.as_tuple() == ("1", "", "")
+    assert sample_def.to_dict() == {"id": "1", "path": "", "text": ""}
+
+    # Test SpeakerSample.Empty
+    assert isinstance(SpeakerSample.Empty, SpeakerSample)
+    assert SpeakerSample.Empty.id == SpeakerStore.default().id
+    assert SpeakerSample.Empty.path == ""
+    assert SpeakerSample.Empty.text == ""
+    assert SpeakerSample.Empty.as_tuple() == (SpeakerStore.default().id, "", "")
+    assert SpeakerSample.Empty.to_dict() == {"id": SpeakerStore.default().id, "path": "", "text": ""}
+    assert LocalSpeaker(id="").ui_preview() == SpeakerSample.Empty
+    assert CloneSpeaker(id="bad").ui_preview() == SpeakerSample.Empty
+
     mgr = SpeakerStore()
     assert mgr._list is None
     assert mgr._main_path == "speakers/speakers.yaml"
@@ -33,10 +51,16 @@ def test_speaker_data():
 
     # Polymorphic prompt resolution & validation for LocalSpeaker
     s1.validate()
-    prompt_path, prompt_text = s1.resolve_prompt()
-    assert prompt_path.endswith("osim.wav")
-    assert prompt_text == s1.text
-    assert s1.ui_preview() == (s1.id, None, "")
+    sample1 = s1.sample()
+    assert isinstance(sample1, SpeakerSample)
+    assert sample1.id == "osim"
+    assert sample1.path.endswith("osim.wav")
+    assert sample1.text == s1.text
+    preview1 = s1.ui_preview()
+    assert isinstance(preview1, SpeakerSample)
+    assert preview1.id == "osim"
+    assert preview1.path == ""
+    assert preview1.text == ""
 
     # Test CloneSpeaker serialization and polymorphism
     clone_s = CloneSpeaker(id="cl1", filename="osim.wav", text="clone text")
@@ -53,14 +77,21 @@ def test_speaker_data():
     assert pred_s != clone_s
 
     # CloneSpeaker validation and prompt resolution
-    clone_audio_path, clone_audio_text = clone_s.resolve_prompt()
-    assert clone_audio_path.endswith("osim.wav")
-    assert clone_audio_text == "clone text"
+    clone_sample = clone_s.sample()
+    assert isinstance(clone_sample, SpeakerSample)
+    assert clone_sample.id == "cl1"
+    assert clone_sample.path.endswith("osim.wav")
+    assert clone_sample.text == "clone text"
+    clone_preview = clone_s.ui_preview()
+    assert isinstance(clone_preview, SpeakerSample)
+    assert clone_preview.id == "osim"  # fallback to default speaker because cl1 is not in store
+    assert clone_preview.path.endswith("osim.wav")
+    assert clone_preview.text == "clone text"
 
     # Validation errors on invalid CloneSpeaker
     invalid_clone = CloneSpeaker(id="bad", text="")
     try:
-        invalid_clone.resolve_prompt()
+        invalid_clone.sample()
         assert False, "Should have raised ValueError on missing audio/text"
     except ValueError:
         pass

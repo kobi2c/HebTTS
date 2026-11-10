@@ -7,7 +7,7 @@ from .Config import (
     DEFAULT_TEXT,
 )
 from .Format     import ( Format                        )
-from .Speaker    import ( Speaker, LocalSpeaker, CloneSpeaker, SpeakerStore, SpeakerMode )
+from .Speaker    import ( Speaker, LocalSpeaker, CloneSpeaker, SpeakerSample, SpeakerStore, SpeakerMode )
 from .Checkpoint import ( Checkpoint , CheckpointStore  )
 from .Range      import ( Range      , RangeList        )
 from .NoiseFix   import ( NoiseFix, trim_leading_noise, apply_fade )
@@ -19,6 +19,7 @@ __all__ = [
     "Speaker",
     "LocalSpeaker",
     "CloneSpeaker",
+    "SpeakerSample",
     "SpeakerStore",
     "SpeakerMode",
     "MbdMode",
