@@ -328,7 +328,7 @@ class GradioPage:
 
                     speaker_mode_radio = gr.Radio(
                         choices=["Predefined Speaker", "Custom Voice Clone"],
-                        value=self.config.speaker.mode if self.config.speaker else SpeakerMode.Predefined,
+                        value=str(self.config.speaker.mode if self.config.speaker else SpeakerMode.Predefined),
                         label="Speaker Mode",
                     )
 
@@ -416,12 +416,12 @@ class GradioPage:
                         )
                         nikud_checkbox = gr.Checkbox(
                             label="Phonetic Nikud / Ktiv-Male Disambiguation",
-                            value=self.config.nikud_converter,
+                            value=bool(self.config.nikud_converter),
                             info="Use phonikud to phonetically convert vocalized words to Ktiv-Male.",
                         )
                         mbd_checkbox = gr.Checkbox(
                             label="Multi-Band Diffusion (MBD) Vocoder",
-                            value=self.config.mbd,
+                            value=bool(self.config.mbd),
                             info="Enable MBD diffusion vocoder (if installed) instead of EnCodec decode.",
                         )
                         max_chunk_slider = gr.Slider(
@@ -454,7 +454,7 @@ class GradioPage:
                             )
                         with gr.Row():
                             seed_number = gr.Number(label="Seed", value=self.config.seed_number, precision=0)
-                            randomize_seed = gr.Checkbox(label="Randomize Seed", value=self.config.randomize_seed)
+                            randomize_seed = gr.Checkbox(label="Randomize Seed", value=bool(self.config.randomize_seed))
 
             # --- Interactive Callbacks ---
 
