@@ -23,6 +23,8 @@ from config import (
     RandomMode,
     NikudMode,
     Speaker,
+    LocalSpeaker,
+    CloneSpeaker,
     SpeakerStore,
     CheckpointStore,
 )
@@ -66,12 +68,14 @@ class GradioPage:
     ) -> Config:
         """Updates self.config attributes in-place from UI components with type conversions."""
         self.config.checkpoint = str(checkpoint)
-        self.config.speaker = Speaker.create(
-            mode=SpeakerMode(speaker_mode),
-            id=str(speaker) if speaker is not None else None,
-            clone_path=Path(clone_audio) if clone_audio else None,
-            clone_text=clone_text,
-        )
+        mode = SpeakerMode(speaker_mode)
+        if mode == SpeakerMode.Local:
+            self.config.speaker = LocalSpeaker.create(id=str(speaker) if speaker is not None else None)
+        else:
+            self.config.speaker = CloneSpeaker.create(
+                clone_path=Path(clone_audio) if clone_audio else None,
+                clone_text=clone_text,
+            )
         self.config.text = str(text or "")
         self.config.pause_duration = float(pause_duration)
         self.config.temperature = float(temperature)
@@ -86,16 +90,8 @@ class GradioPage:
     def get_ui_values_from_config(self) -> List[Any]:
         """Returns list of values from self.config corresponding to the UI stateful components."""
         spk = self.config.speaker
-        if spk and spk.mode == SpeakerMode.Clone:
-            spk_mode_str = str(SpeakerMode.Clone)
-            spk_id = "osim"
-            clone_aud = spk.resolve_audio_path() if (spk.exists or spk.data) else None
-            clone_txt = spk.text or ""
-        else:
-            spk_mode_str = str(SpeakerMode.Predefined)
-            spk_id = spk.id if spk else "osim"
-            clone_aud = None
-            clone_txt = ""
+        spk_mode_str = spk.ui_mode if spk else str(SpeakerMode.Local)
+        spk_id, clone_aud, clone_txt = spk.ui_preview() if spk else ("osim", None, "")
 
         return [
             self.config.checkpoint,
@@ -203,16 +199,10 @@ class GradioPage:
         spk = cfg.speaker
         if not spk:
             raise gr.Error("Speaker not configured.")
-        if spk.mode == SpeakerMode.Predefined:
-            prompt_audio = spk.resolve_audio_path()
-            prompt_text = spk.text
-        else:  # Custom Voice Clone
-            if not spk.exists and not spk.data:
-                raise gr.Error("Please upload a reference audio for voice cloning.")
-            if not spk.text or not spk.text.strip():
-                raise gr.Error("Please provide reference transcript text corresponding to the clone audio.")
-            prompt_audio = spk.resolve_audio_path()
-            prompt_text = spk.text.strip()
+        try:
+            prompt_audio, prompt_text = spk.resolve_prompt()
+        except ValueError as e:
+            raise gr.Error(str(e))
 
         # 2. Seed handling
         if random_mode == RandomMode.Enabled:
@@ -327,17 +317,17 @@ class GradioPage:
                     )
 
                     speaker_mode_radio = gr.Radio(
-                        choices=["Predefined Speaker", "Custom Voice Clone"],
-                        value=str(self.config.speaker.mode if self.config.speaker else SpeakerMode.Predefined),
+                        choices=["Local Speaker", "Custom Voice Clone"],
+                        value=self.config.speaker.ui_mode if self.config.speaker else str(SpeakerMode.Local),
                         label="Speaker Mode",
                     )
 
-                    # Predefined speaker controls
-                    with gr.Group(visible=True) as predefined_group:
+                    # Local speaker controls
+                    with gr.Group(visible=True) as local_group:
                         speaker_dropdown = gr.Dropdown(
                             choices=speaker_names,
                             value=self.config.speaker.id if self.config.speaker else default_speaker,
-                            label="Predefined Speaker",
+                            label="Local Speaker",
                             info="Select a speaker from speakers/speakers.yaml",
                         )
                         speaker_preview_audio = gr.Audio(
@@ -459,24 +449,24 @@ class GradioPage:
 
             # --- Interactive Callbacks ---
 
-            # Switch between Predefined Speaker and Custom Voice Clone groups
+            # Switch between Local Speaker and Custom Voice Clone groups
             def toggle_speaker_mode(mode: Union[SpeakerMode, int, str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-                is_predefined = (SpeakerMode(mode) == SpeakerMode.Predefined)
-                return gr.update(visible=is_predefined), gr.update(visible=not is_predefined)
+                is_local = (SpeakerMode(mode) == SpeakerMode.Local)
+                return gr.update(visible=is_local), gr.update(visible=not is_local)
 
             speaker_mode_radio.change(
                 fn=toggle_speaker_mode,
                 inputs=[speaker_mode_radio],
-                outputs=[predefined_group, clone_group],
+                outputs=[local_group, clone_group],
             )
 
-            # Update preview audio/text when predefined speaker changes
-            def on_predefined_change(spk: str) -> Tuple[Optional[str], str]:
+            # Update preview audio/text when local speaker changes
+            def on_local_change(spk: str) -> Tuple[Optional[str], str]:
                 aud, txt = get_speaker_preview(spk)
                 return aud, txt
 
             speaker_dropdown.change(
-                fn=on_predefined_change,
+                fn=on_local_change,
                 inputs=[speaker_dropdown],
                 outputs=[speaker_preview_audio, speaker_preview_text],
             )
@@ -598,7 +588,7 @@ class GradioPage:
                     *stateful_components,
                     speaker_preview_audio,
                     speaker_preview_text,
-                    predefined_group,
+                    local_group,
                     clone_group,
                     ktiv_male_display,
                 ],

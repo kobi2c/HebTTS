@@ -15,6 +15,8 @@ from config import (
     Config,
     Format,
     Speaker,
+    LocalSpeaker,
+    CloneSpeaker,
     SpeakerMode,
     RangeList,
     ChainMode,
@@ -275,8 +277,8 @@ def test_chunk_list_resolve_prompt_chaining():
         assert c1.same_speaker(None) is False
         assert c1.same_speaker(c1) is True
 
-        # Test clone speaker comparison (different mode -> not same speaker)
-        cfg_clone = Config(speaker=Speaker(id="osim", filename="osim.wav", mode=SpeakerMode.Clone))
+        # Test clone speaker comparison (different class -> not same speaker)
+        cfg_clone = Config(speaker=CloneSpeaker(id="osim", filename="osim.wav"))
         c_clone = Chunk(index=4, config=cfg_clone, text="שורה רביעית")
         assert c1.same_speaker(c_clone) is False
 

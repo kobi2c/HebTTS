@@ -4,20 +4,20 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 
 class SpeakerMode(IntEnum):
     """Supported speaker selection modes for synthesis."""
-    Predefined = 0
+    Local = 0
     Clone = 1
 
     @classmethod
     def _missing_(cls, value: Any) -> "SpeakerMode":
         if isinstance(value, str):
             val_clean = value.strip().lower()
-            if val_clean in ("0", "predefined", "predefined speaker", "predefined_speaker", "speaker"):
-                return cls.Predefined
+            if val_clean in ("0", "local", "local speaker", "local_speaker", "speaker"):
+                return cls.Local
             if val_clean in ("1", "clone", "custom voice clone", "custom_voice_clone", "voice clone"):
                 return cls.Clone
         elif isinstance(value, int):
@@ -27,7 +27,7 @@ class SpeakerMode(IntEnum):
         return super()._missing_(value)
 
     def __str__(self) -> str:
-        return "Predefined Speaker" if self == SpeakerMode.Predefined else "Custom Voice Clone"
+        return "Local Speaker" if self == SpeakerMode.Local else "Custom Voice Clone"
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, str):
@@ -43,17 +43,15 @@ class SpeakerMode(IntEnum):
 
 @dataclass
 class Speaker:
-    """Represents a reference speaker voice (predefined or clone)."""
+    """Represents a reference speaker voice base class."""
     id       : str = ""
     filename : str = ""
     ext      : str = "wav"
     text     : str = ""
     data     : str = ""
     base     : str = "speakers"
-    mode     : SpeakerMode = SpeakerMode.Predefined
 
     def __post_init__(self) -> None:
-        self.mode = SpeakerMode(self.mode)
         if self.ext:
             self.ext = self.ext.lstrip(".").lower()
         elif self.filename:
@@ -77,15 +75,31 @@ class Speaker:
         return os.path.exists(self.full_path)
 
     def __eq__(self, other: Any) -> bool:
-        if isinstance(other, Speaker):
+        if isinstance(other, self.__class__):
             return (
-                self.mode == other.mode
-                and self.id == other.id
+                self.id == other.id
                 and self.filename == other.filename
                 and self.text == other.text
                 and self.data == other.data
             )
         return False
+
+    def validate(self) -> None:
+        """Validates that required speaker fields are properly configured."""
+        pass
+
+    def resolve_prompt(self) -> Tuple[str, str]:
+        """Resolves prompt audio path and reference transcript."""
+        raise NotImplementedError
+
+    @property
+    def ui_mode(self) -> str:
+        """Returns UI radio string representing this speaker mode."""
+        raise NotImplementedError
+
+    def ui_preview(self) -> Tuple[str, Optional[str], str]:
+        """Returns UI preview tuple (speaker_id, clone_audio, clone_text)."""
+        raise NotImplementedError
 
     def resolve_audio_path(self) -> str:
         """
@@ -133,12 +147,18 @@ class Speaker:
             "ext": self.ext,
             "text": self.text,
             "data": data_str,
-            "mode": int(self.mode),
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any], base: str = "speakers") -> "Speaker":
-        """Constructs a Speaker instance from canonical dictionary representation."""
+        """Constructs a LocalSpeaker or CloneSpeaker instance from canonical dictionary representation."""
+        raw_mode = data.get("mode", SpeakerMode.Local)
+        try:
+            mode = SpeakerMode(raw_mode)
+        except Exception:
+            mode = SpeakerMode.Local
+
+        target_cls = CloneSpeaker if mode == SpeakerMode.Clone else LocalSpeaker
         spk_id = str(data.get("id", ""))
         filename = str(data.get("filename", ""))
         ext = str(data.get("ext", ""))
@@ -146,21 +166,19 @@ class Speaker:
             ext = Path(filename).suffix.lstrip(".").lower() or "wav"
         text = str(data.get("text", ""))
         b64_data = str(data.get("data", ""))
-        mode = SpeakerMode(data.get("mode", SpeakerMode.Predefined))
-        return cls(
+        return target_cls(
             id=spk_id,
             filename=filename,
             ext=ext or "wav",
             text=text,
             data=b64_data,
             base=base,
-            mode=mode,
         )
 
     @classmethod
     def create(
         cls,
-        mode: Union[SpeakerMode, int, str] = SpeakerMode.Predefined,
+        mode: Union[SpeakerMode, int, str] = SpeakerMode.Local,
         id: Optional[str] = None,
         clone_path: Optional[Path] = None,
         clone_text: Optional[str] = None,
@@ -170,52 +188,20 @@ class Speaker:
     ) -> "Speaker":
         """
         Factory method to create a Speaker instance with explicit parameters.
-        - If mode is Predefined, only uses id to fetch from SpeakerStore.
-        - If mode is Clone, builds clone from clone_path/clone_text, speaker, or dict source.
+        - If mode is Local, delegates to LocalSpeaker.create(id=id).
+        - If mode is Clone, delegates to CloneSpeaker.create(...).
         """
         mode = SpeakerMode(mode)
-        if mode == SpeakerMode.Predefined:
-            return SpeakerStore.resolve(id)
+        if mode == SpeakerMode.Local:
+            return LocalSpeaker.create(id=id)
 
-        # Clone Mode
-        text_clean = str(clone_text or "").strip()
-
-        if speaker is not None:
-            speaker.mode = SpeakerMode.Clone
-            if id is not None:
-                speaker.id = str(id)
-            if clone_text is not None:
-                speaker.text = text_clean
-            return speaker
-
-        if source is not None:
-            spk = cls.from_dict(source)
-            spk.mode = SpeakerMode.Clone
-            if id is not None:
-                spk.id = str(id)
-            if clone_text is not None:
-                spk.text = text_clean
-            return spk
-
-        if clone_path is not None:
-            ext = clone_path.suffix.lstrip(".").lower() or "wav"
-            spk_id = str(id) if id is not None else clone_path.stem
-            spk = cls(
-                id=spk_id,
-                filename=clone_path.name,
-                ext=ext,
-                text=text_clean,
-                base=str(clone_path.parent),
-                mode=SpeakerMode.Clone,
-            )
-            if load_audio and spk.exists:
-                spk.load_audio(clone_path)
-            return spk
-
-        return cls(
-            id=str(id) if id is not None else "clone",
-            text=text_clean,
-            mode=SpeakerMode.Clone,
+        return CloneSpeaker.create(
+            id=id,
+            clone_path=clone_path,
+            clone_text=clone_text,
+            speaker=speaker,
+            source=source,
+            load_audio=load_audio,
         )
 
     def parse(self, data: dict, base: Union[Path, str], id: str) -> "Speaker":
@@ -250,6 +236,139 @@ class Speaker:
         return self
 
 
+@dataclass
+class LocalSpeaker(Speaker):
+    """Represents a predefined local speaker discovered in speakers/."""
+
+    @property
+    def ui_mode(self) -> str:
+        return "Local Speaker"
+
+    def validate(self) -> None:
+        """Local speakers are always valid."""
+        pass
+
+    def resolve_prompt(self) -> Tuple[str, str]:
+        """Resolves prompt audio path and transcript for local speaker."""
+        return self.resolve_audio_path(), self.text
+
+    def ui_preview(self) -> Tuple[str, Optional[str], str]:
+        """Returns (speaker_id, clone_audio, clone_text) for UI controls."""
+        return self.id, None, ""
+
+    def to_dict(self, embed_data: bool = True) -> Dict[str, Any]:
+        d = super().to_dict(embed_data=embed_data)
+        d["mode"] = int(SpeakerMode.Local)
+        return d
+
+    @classmethod
+    def create(cls, id: Optional[str] = None) -> "LocalSpeaker":
+        """Resolves a LocalSpeaker from the SpeakerStore by id."""
+        return SpeakerStore.resolve(id)
+
+
+@dataclass
+class CloneSpeaker(Speaker):
+    """Represents a custom voice clone speaker."""
+
+    @property
+    def ui_mode(self) -> str:
+        return "Custom Voice Clone"
+
+    def validate(self) -> None:
+        """Validates that clone speaker has audio reference and reference text."""
+        if not self.exists and not self.data:
+            raise ValueError(f"No reference audio available for clone speaker '{self.id}'.")
+        if not self.text or not self.text.strip():
+            raise ValueError(f"No reference transcript text configured for clone speaker '{self.id}'.")
+
+    def resolve_prompt(self) -> Tuple[str, str]:
+        """Validates and resolves prompt audio path and stripped transcript."""
+        self.validate()
+        return self.resolve_audio_path(), self.text.strip()
+
+    def ui_preview(self) -> Tuple[str, Optional[str], str]:
+        """Returns (speaker_id, clone_audio, clone_text) for UI controls."""
+        audio_preview = self.resolve_audio_path() if (self.exists or self.data) else None
+        return "osim", audio_preview, self.text or ""
+
+    def to_dict(self, embed_data: bool = True) -> Dict[str, Any]:
+        d = super().to_dict(embed_data=embed_data)
+        d["mode"] = int(SpeakerMode.Clone)
+        return d
+
+    @classmethod
+    def create(
+        cls,
+        id: Optional[str] = None,
+        clone_path: Optional[Path] = None,
+        clone_text: Optional[str] = None,
+        speaker: Optional["Speaker"] = None,
+        source: Optional[Dict[str, Any]] = None,
+        load_audio: bool = True,
+    ) -> "CloneSpeaker":
+        """Factory method to construct a CloneSpeaker instance."""
+        text_clean = str(clone_text or "").strip()
+
+        if speaker is not None:
+            if isinstance(speaker, CloneSpeaker):
+                spk = cls(
+                    id=str(id) if id is not None else speaker.id,
+                    filename=speaker.filename,
+                    ext=speaker.ext,
+                    text=text_clean if clone_text is not None else speaker.text,
+                    data=speaker.data,
+                    base=speaker.base,
+                )
+            else:
+                spk = cls(
+                    id=str(id) if id is not None else speaker.id,
+                    filename=speaker.filename,
+                    ext=speaker.ext,
+                    text=text_clean if clone_text is not None else speaker.text,
+                    data=speaker.data,
+                    base=speaker.base,
+                )
+            return spk
+
+        if source is not None:
+            spk_id = str(id) if id is not None else str(source.get("id", "clone"))
+            filename = str(source.get("filename", ""))
+            ext = str(source.get("ext", ""))
+            if not ext and filename:
+                ext = Path(filename).suffix.lstrip(".").lower() or "wav"
+            text = text_clean if clone_text is not None else str(source.get("text", ""))
+            b64_data = str(source.get("data", ""))
+            base = str(source.get("base", "speakers"))
+            return cls(
+                id=spk_id,
+                filename=filename,
+                ext=ext or "wav",
+                text=text,
+                data=b64_data,
+                base=base,
+            )
+
+        if clone_path is not None:
+            ext = clone_path.suffix.lstrip(".").lower() or "wav"
+            spk_id = str(id) if id is not None else clone_path.stem
+            spk = cls(
+                id=spk_id,
+                filename=clone_path.name,
+                ext=ext,
+                text=text_clean,
+                base=str(clone_path.parent),
+            )
+            if load_audio and spk.exists:
+                spk.load_audio(clone_path)
+            return spk
+
+        return cls(
+            id=str(id) if id is not None else "clone",
+            text=text_clean,
+        )
+
+
 class _StoreClassOrInstanceMethod:
     """Descriptor enabling store methods to function both as Store.method(...) and instance.method(...)."""
     def __init__(self, fn):
@@ -267,7 +386,7 @@ class SpeakerStore:
     def __init__(self, path: Union[str, Path, None] = None) -> None:
         self._main_path: str = self.find_path(path)
         self._load_path: str = self._main_path
-        self._list: Optional[List[Speaker]] = None
+        self._list: Optional[List[LocalSpeaker]] = None
 
     @classmethod
     def find_path(cls, path: Union[str, Path, None] = None) -> str:
@@ -276,7 +395,7 @@ class SpeakerStore:
             return str(path)
         return "speakers/speakers.yaml"
 
-    def load(self, path: Union[str, Path, None] = None) -> List[Speaker]:
+    def load(self, path: Union[str, Path, None] = None) -> List[LocalSpeaker]:
         """Loads speakers from YAML and discovers additional local *.wav files with companion *.txt transcripts."""
         self._load_path = str(path) if path is not None else self._main_path
         yaml_file = Path(self._load_path)
@@ -296,10 +415,10 @@ class SpeakerStore:
                 except Exception:
                     raw_dict = {}
 
-        speakers: List[Speaker] = []
+        speakers: List[LocalSpeaker] = []
         seen_paths: set = set()
 
-        def add(sp: Speaker, check_path: bool) -> None:
+        def add(sp: LocalSpeaker, check_path: bool) -> None:
             if not sp.id or not sp.filename:
                 return
             cpath = sp.full_path.resolve().as_posix().lower()
@@ -313,17 +432,17 @@ class SpeakerStore:
         for spk_id, spk_data in raw_dict.items():
             if not isinstance(spk_data, dict):
                 continue
-            sp = Speaker().parse(spk_data, base_file, spk_id)
+            sp = LocalSpeaker()
+            sp.parse(spk_data, base_file, spk_id)
             add(sp, False)
 
         # 2. Discover additional local *.wav and *.mp3 files with companion *.txt files in base directory
         if base_file.exists() and base_file.is_dir():
-            # Scan both .wav and .mp3, prioritizing .wav on collision
             discovered_files: Dict[str, Path] = {}
             for f in sorted(base_file.glob("*.mp3")):
                 discovered_files[f.stem] = f
             for f in sorted(base_file.glob("*.wav")):
-                discovered_files[f.stem] = f  # .wav overwrites .mp3 if both exist
+                discovered_files[f.stem] = f
 
             for stem, f in sorted(discovered_files.items()):
                 txt_file = f.with_suffix(".txt")
@@ -333,7 +452,7 @@ class SpeakerStore:
                     except Exception:
                         transcript = ""
                     if transcript:
-                        sp = Speaker(
+                        sp = LocalSpeaker(
                             id=f.stem,
                             filename=f.relative_to(base_file).as_posix(),
                             ext=f.suffix.lstrip(".").lower() or "wav",
@@ -345,8 +464,8 @@ class SpeakerStore:
         self._list = speakers
         return self._list
 
-    def list(self) -> List[Speaker]:
-        """Returns the list of loaded Speaker instances (loads lazily if not yet loaded)."""
+    def list(self) -> List[LocalSpeaker]:
+        """Returns the list of loaded LocalSpeaker instances (loads lazily if not yet loaded)."""
         if self._list is None:
             self.load()
         return self._list or []
@@ -356,10 +475,10 @@ class SpeakerStore:
         self._list = None
 
     @_StoreClassOrInstanceMethod
-    def default(self) -> Speaker:
+    def default(self) -> LocalSpeaker:
         """Returns the default speaker (first available from list or fallback)."""
         speakers = self.list()
-        return speakers[0] if speakers else Speaker(id="osim", filename="osim.wav", ext="wav", base="speakers", mode=SpeakerMode.Predefined)
+        return speakers[0] if speakers else LocalSpeaker(id="osim", filename="osim.wav", ext="wav", base="speakers")
 
     @_StoreClassOrInstanceMethod
     def resolve(self, value: Union[Speaker, Dict[str, Any], str, int, None]) -> Speaker:
@@ -374,20 +493,19 @@ class SpeakerStore:
             found = self.find(value)
             if found:
                 return found
-            return Speaker(id=str(value), mode=SpeakerMode.Predefined)
+            return LocalSpeaker(id=str(value))
         return self.default()
 
     @_StoreClassOrInstanceMethod
-    def find(self, index_or_id: Union[int, str]) -> Optional[Speaker]:
+    def find(self, index_or_id: Union[int, str]) -> Optional[LocalSpeaker]:
         """
         Finds a speaker by 1-based index (int or digit string) or by case-insensitive speaker ID.
-        Returns matching Speaker instance or None if not found.
+        Returns matching LocalSpeaker instance or None if not found.
         """
         speakers = self.list()
         if not speakers:
             return None
 
-        # Check for 1-based integer index or digit string within range
         str_val = str(index_or_id).strip()
         if str_val.isdigit():
             idx = int(str_val)
@@ -396,7 +514,6 @@ class SpeakerStore:
             else:
                 return None
 
-        # Lookup by ID, audio path, or filename/stem
         target = str_val
         target_name = Path(str_val).name
         target_stem = Path(str_val).stem

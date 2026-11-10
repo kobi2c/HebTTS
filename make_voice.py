@@ -280,12 +280,7 @@ class VoiceMaker:
         spk = config.speaker
         if not spk:
             raise ValueError("No speaker configured.")
-        if spk.mode == SpeakerMode.Clone:
-            if not spk.exists and not spk.data:
-                raise ValueError(f"No clone audio available for speaker '{spk.id}'.")
-            if not spk.text or not spk.text.strip():
-                raise ValueError("No clone transcript text configured in speaker.")
-        return spk.resolve_audio_path(), spk.text
+        return spk.resolve_prompt()
     def synthesize_chunk(
         self,
         chunk_text: str,

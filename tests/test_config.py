@@ -21,6 +21,8 @@ from config import (
     NikudMode,
     ChainMode,
     Speaker,
+    LocalSpeaker,
+    CloneSpeaker,
     DEFAULT_TEXT,
 )
 
@@ -63,22 +65,27 @@ def test_enums():
     assert Format.normalize_formats("both") == [Format.WAV, Format.MP3]
 
     # SpeakerMode IntEnum
-    assert isinstance(SpeakerMode.Predefined, int)
+    assert isinstance(SpeakerMode.Local, int)
     assert isinstance(SpeakerMode.Clone, int)
-    assert SpeakerMode.Predefined == 0
+    assert SpeakerMode.Local == 0
     assert SpeakerMode.Clone == 1
-    assert int(SpeakerMode.Predefined) == 0
+    assert int(SpeakerMode.Local) == 0
     assert int(SpeakerMode.Clone) == 1
-    assert SpeakerMode("Predefined Speaker") == SpeakerMode.Predefined
+    assert SpeakerMode("Local Speaker") == SpeakerMode.Local
     assert SpeakerMode("Custom Voice Clone") == SpeakerMode.Clone
-    assert SpeakerMode("predefined") == SpeakerMode.Predefined
+    assert SpeakerMode("local") == SpeakerMode.Local
     assert SpeakerMode("clone") == SpeakerMode.Clone
-    assert SpeakerMode(0) == SpeakerMode.Predefined
+    assert SpeakerMode(0) == SpeakerMode.Local
     assert SpeakerMode(1) == SpeakerMode.Clone
-    assert str(SpeakerMode.Predefined) == "Predefined Speaker"
+    assert str(SpeakerMode.Local) == "Local Speaker"
     assert str(SpeakerMode.Clone) == "Custom Voice Clone"
-    assert SpeakerMode.Predefined == "Predefined Speaker"
+    assert SpeakerMode.Local == "Local Speaker"
     assert SpeakerMode.Clone == "Custom Voice Clone"
+    try:
+        SpeakerMode("predefined")
+        assert False, "Should have raised ValueError for 'predefined'"
+    except ValueError:
+        pass
     print("[PASS] Enums verified.")
 
 
@@ -86,7 +93,8 @@ def test_config_defaults():
     cfg = Config()
     assert cfg.checkpoint == "checkpoint.pt"
     assert isinstance(cfg.speaker, Speaker)
-    assert cfg.speaker.mode == SpeakerMode.Predefined
+    assert isinstance(cfg.speaker, LocalSpeaker)
+    assert cfg.speaker.ui_mode == "Local Speaker"
     assert cfg.speaker.id in ("osim", "1")
     assert cfg.text == DEFAULT_TEXT
     assert cfg.pause_duration == 0.3
@@ -122,10 +130,10 @@ def test_config_dicts():
     assert cfg_from_d.chain_speaker == ChainMode.Enabled
     assert cfg_from_d.max_chunk_size == 75
     assert isinstance(cfg_from_d.speaker, Speaker)
-    assert cfg_from_d.speaker.mode == SpeakerMode.Predefined
+    assert isinstance(cfg_from_d.speaker, LocalSpeaker)
 
     # Test with custom clone speaker
-    clone_spk = Speaker(id="custom", filename="custom.wav", text="שלום", mode=SpeakerMode.Clone)
+    clone_spk = CloneSpeaker(id="custom", filename="custom.wav", text="שלום")
     cfg_clone = Config(speaker=clone_spk)
     d_clone = cfg_clone.to_dict()
     assert d_clone["speaker"]["id"] == "custom"
@@ -134,7 +142,7 @@ def test_config_dicts():
     assert d_clone["speaker"]["text"] == "שלום"
     cfg_restored = Config.from_dict(d_clone)
     assert isinstance(cfg_restored.speaker, Speaker)
-    assert cfg_restored.speaker.mode == SpeakerMode.Clone
+    assert isinstance(cfg_restored.speaker, CloneSpeaker)
     assert cfg_restored.speaker.id == "custom"
 
     cfg_inst = Config()
@@ -198,7 +206,8 @@ def test_standalone_speaker_config():
     }
     cfg = Config.from_dict(cfg_dict)
     assert isinstance(cfg.speaker, Speaker)
-    assert cfg.speaker.mode == SpeakerMode.Clone
+    assert isinstance(cfg.speaker, CloneSpeaker)
+    assert cfg.speaker.ui_mode == "Custom Voice Clone"
     assert cfg.speaker.id == "remote_clone"
     assert not os.path.exists(cfg.speaker.filename)
     # resolve_audio_path extracts base64 data to a valid temp file

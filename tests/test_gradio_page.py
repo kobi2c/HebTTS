@@ -14,6 +14,9 @@ import tests.setup_env  # noqa: F401
 from config import (
     Config,
     SpeakerMode,
+    Speaker,
+    LocalSpeaker,
+    CloneSpeaker,
     MbdMode,
     RandomMode,
     NikudMode,
@@ -43,7 +46,7 @@ def test_gradio_page_config_helpers():
     ui_vals = gp.get_ui_values_from_config()
     assert len(ui_vals) == 14
     assert ui_vals[0] == gp.config.checkpoint
-    assert ui_vals[1] == "Predefined Speaker"
+    assert ui_vals[1] == "Local Speaker"
     assert ui_vals[2] in ("osim", "1")
     assert ui_vals[3] is None
     assert ui_vals[4] == ""
@@ -74,9 +77,8 @@ def test_gradio_page_config_helpers():
         max_chunk_size=150,
     )
     assert gp.config.checkpoint == "custom_cp.pt"
-    assert gp.config.speaker.mode == "Custom Voice Clone"
-    assert gp.config.speaker.mode == SpeakerMode.Clone
-    assert isinstance(gp.config.speaker.mode, SpeakerMode)
+    assert isinstance(gp.config.speaker, CloneSpeaker)
+    assert gp.config.speaker.ui_mode == "Custom Voice Clone"
     assert gp.config.speaker.filename == "ref.wav"
     assert gp.config.speaker.text == "ref text"
     assert gp.config.text == "custom text"
