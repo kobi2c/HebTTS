@@ -161,10 +161,10 @@ def test_speaker_create_factory():
     assert spk_pred.id == "osim"
     assert spk_pred.mode == SpeakerMode.Predefined
 
-    # Predefined with custom text override
-    spk_pred_override = Speaker.create(mode=SpeakerMode.Predefined, id="osim", clone_text="overridden text")
+    # Predefined ignores clone_text and only uses id to fetch from store
+    spk_pred_override = Speaker.create(mode=SpeakerMode.Predefined, id="osim", clone_text="ignored text")
     assert spk_pred_override.id == "osim"
-    assert spk_pred_override.text == "overridden text"
+    assert spk_pred_override.text == "אני משתדל מאוד שכל חסות תהיה מיוחדת ושונה"
 
     # Predefined with None id -> default speaker
     spk_pred_def = Speaker.create(mode=SpeakerMode.Predefined)

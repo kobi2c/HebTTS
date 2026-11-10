@@ -384,6 +384,7 @@ class GradioPage:
                     text_file_upload = gr.File(
                         label="Or Upload Input Text File (.txt)",
                         file_types=[".txt"],
+                        height=110
                     )
                     ktiv_male_display = gr.Textbox(
                         label="Phonetic Ktiv-Male (Disambiguated)",

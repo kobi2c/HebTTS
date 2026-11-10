@@ -170,16 +170,18 @@ class Speaker:
     ) -> "Speaker":
         """
         Factory method to create a Speaker instance with explicit parameters.
-        - If speaker is provided, updates and returns it.
-        - If source (dict) is provided, deserializes from dictionary.
-        - If mode is Predefined, resolves speaker from SpeakerStore using id.
-        - If mode is Clone, builds clone from clone_path and clone_text.
+        - If mode is Predefined, only uses id to fetch from SpeakerStore.
+        - If mode is Clone, builds clone from clone_path/clone_text, speaker, or dict source.
         """
         mode = SpeakerMode(mode)
+        if mode == SpeakerMode.Predefined:
+            return SpeakerStore.resolve(id)
+
+        # Clone Mode
         text_clean = str(clone_text or "").strip()
 
         if speaker is not None:
-            speaker.mode = mode
+            speaker.mode = SpeakerMode.Clone
             if id is not None:
                 speaker.id = str(id)
             if clone_text is not None:
@@ -188,20 +190,13 @@ class Speaker:
 
         if source is not None:
             spk = cls.from_dict(source)
-            spk.mode = mode
+            spk.mode = SpeakerMode.Clone
             if id is not None:
                 spk.id = str(id)
             if clone_text is not None:
                 spk.text = text_clean
             return spk
 
-        if mode == SpeakerMode.Predefined:
-            spk = SpeakerStore.resolve(id)
-            if clone_text is not None:
-                spk.text = text_clean
-            return spk
-
-        # Clone Mode
         if clone_path is not None:
             ext = clone_path.suffix.lstrip(".").lower() or "wav"
             spk_id = str(id) if id is not None else clone_path.stem
