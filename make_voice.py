@@ -15,6 +15,7 @@ import torch
 import torchaudio
 from config import (
     Config,
+    SpeakerMode,
     Format,
     MbdMode,
     RandomMode,
@@ -29,8 +30,6 @@ from config import (
     ChunkStatus,
     split_text,
     format_srt_time,
-    audio_to_base64,
-    base64_to_audio,
 )
 from GradioPage import GradioPage
 from make_sample import SampleMaker
@@ -278,30 +277,15 @@ class VoiceMaker:
         return blocks
     def resolve_speaker_prompt(self, config: Config) -> Tuple[str, str]:
         """Resolves prompt audio path and reference transcript from config."""
-        speaker_mode = config.speaker_mode
-        if speaker_mode == "Predefined Speaker":
-            spk_data = SpeakerStore()
-            spk = spk_data.find(config.predefined_speaker)
-            if not spk:
-                speakers = spk_data.list()
-                spk = speakers[0] if speakers else None
-            if not spk:
-                raise ValueError("No predefined speakers available.")
-            return str(spk.full_path), spk.txt
-        # Custom Voice Clone
-        clone_audio = config.clone_audio
-        clone_text = config.clone_text
-        if isinstance(clone_audio, dict):
-            # Self-contained Base64 encoded audio
-            decoded_path = base64_to_audio(clone_audio)
-            if not decoded_path:
-                raise ValueError("Failed to decode base64 clone_audio.")
-            prompt_audio = decoded_path
-        elif isinstance(clone_audio, str) and os.path.exists(clone_audio):
-            prompt_audio = clone_audio
-        else:
-            raise ValueError(f"Invalid clone_audio provided in config: {clone_audio}")
-        return prompt_audio, str(clone_text)
+        spk = config.speaker
+        if not spk:
+            raise ValueError("No speaker configured.")
+        if spk.mode == SpeakerMode.Clone:
+            if not spk.exists and not spk.data:
+                raise ValueError(f"No clone audio available for speaker '{spk.id}'.")
+            if not spk.text or not spk.text.strip():
+                raise ValueError("No clone transcript text configured in speaker.")
+        return spk.resolve_audio_path(), spk.text
     def synthesize_chunk(
         self,
         chunk_text: str,

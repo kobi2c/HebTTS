@@ -41,7 +41,7 @@ def run_benchmark():
 
     cfg = Config().reset()
     cfg.mbd = 1
-    cfg.predefined_speaker = "1"
+    cfg.speaker = "1"
 
     t_load_start = time.time()
     model, audio_tokenizer, text_collater, alef_bert_tokenizer = vm.page.load_model_if_needed(

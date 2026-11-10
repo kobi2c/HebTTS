@@ -14,6 +14,8 @@ import soundfile as sf
 from config import (
     Config,
     Format,
+    Speaker,
+    SpeakerMode,
     RangeList,
     ChainMode,
     ChunkStatus,
@@ -161,8 +163,8 @@ def test_chunk_file_operations_and_clean():
 
 
 def test_chunk_list_collection_and_from_blocks():
-    cfg1 = Config(predefined_speaker="osim")
-    cfg2 = Config(predefined_speaker="shani")
+    cfg1 = Config(speaker="osim")
+    cfg2 = Config(speaker="shani")
     blocks = [
         (cfg1, "שורה ראשונה קצרה"),
         (cfg2, "שורה שנייה קצרה"),
@@ -170,10 +172,10 @@ def test_chunk_list_collection_and_from_blocks():
     chunk_list = ChunkList.from_blocks(blocks, max_chunk_size=100)
     assert len(chunk_list) == 2
     assert chunk_list[0].index == 1
-    assert chunk_list[0].config.predefined_speaker == "osim"
+    assert chunk_list[0].config.speaker.id == "osim"
     assert chunk_list[0].text == "שורה ראשונה קצרה"
     assert chunk_list[1].index == 2
-    assert chunk_list[1].config.predefined_speaker == "shani"
+    assert chunk_list[1].config.speaker.id == "shani"
 
     # Inheritance from base config max_chunk_size
     cfg_small = Config(max_chunk_size=40)
@@ -258,14 +260,25 @@ def test_chunk_list_join_audio_and_save():
 def test_chunk_list_resolve_prompt_chaining():
     with tempfile.TemporaryDirectory() as tmp_dir:
         out_dir = Path(tmp_dir)
-        cfg1 = Config(predefined_speaker="osim")
-        cfg2 = Config(predefined_speaker="osim")
-        cfg3_diff = Config(predefined_speaker="shani")
+        cfg1 = Config(speaker="osim")
+        cfg2 = Config(speaker="osim")
+        cfg3_diff = Config(speaker="shani")
 
         c1 = Chunk(index=1, config=cfg1, text="שורה ראשונה")
         c2 = Chunk(index=2, config=cfg2, text="שורה שנייה")
         c3 = Chunk(index=3, config=cfg3_diff, text="שורה שלישית")
         chunk_list = ChunkList([c1, c2, c3])
+
+        # Test Chunk.same_speaker method
+        assert c1.same_speaker(c2) is True
+        assert c1.same_speaker(c3) is False
+        assert c1.same_speaker(None) is False
+        assert c1.same_speaker(c1) is True
+
+        # Test clone speaker comparison (different mode -> not same speaker)
+        cfg_clone = Config(speaker=Speaker(id="osim", filename="osim.wav", mode=SpeakerMode.Clone))
+        c_clone = Chunk(index=4, config=cfg_clone, text="שורה רביעית")
+        assert c1.same_speaker(c_clone) is False
 
         # 1. Chunk 1 has no previous chunk -> (None, None)
         p_audio, p_txt = chunk_list.resolve_prompt(0, out_dir, "test", chain_speaker=ChainMode.Enabled)

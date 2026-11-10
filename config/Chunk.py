@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
@@ -189,6 +191,14 @@ class Chunk:
     def exists(self, output_dir: Union[str, Path], basename: str) -> bool:
         """Returns True if the chunk wav audio file exists on disk."""
         return self.wav_path(output_dir, basename).exists()
+
+    def same_speaker(self, chunk: Chunk) -> bool:
+        """Checks if this chunk and another chunk share the same speaker identity."""
+        if not isinstance(chunk, Chunk):
+            return False
+        if self is chunk:
+            return True
+        return self.config.speaker == chunk.config.speaker
 
     def load_audio(self, output_dir: Union[str, Path], basename: str) -> np.ndarray:
         """Loads existing audio from disk, updating status to REUSED and calculating duration."""
@@ -435,17 +445,7 @@ class ChunkList:
         curr_chunk = self.chunks[chunk_idx]
 
         # Verify speaker identity did not change via ! or @ directives
-        prev_spk = (
-            prev_chunk.config.speaker_mode,
-            prev_chunk.config.predefined_speaker,
-            prev_chunk.config.clone_audio,
-        )
-        curr_spk = (
-            curr_chunk.config.speaker_mode,
-            curr_chunk.config.predefined_speaker,
-            curr_chunk.config.clone_audio,
-        )
-        if prev_spk != curr_spk:
+        if not prev_chunk.same_speaker(curr_chunk):
             return None, None
 
         out_path = Path(output_dir)

@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import sys
@@ -13,11 +14,13 @@ import tests.setup_env  # noqa: F401
 
 from config import (
     Config,
+    SpeakerMode,
     Format,
     MbdMode,
     RandomMode,
     NikudMode,
     ChainMode,
+    Speaker,
     DEFAULT_TEXT,
 )
 
@@ -58,16 +61,33 @@ def test_enums():
     assert Format.normalize("both") == [Format.WAV, Format.MP3]
     assert Format.normalize([Format.WAV, Format.MP3]) == [Format.WAV, Format.MP3]
     assert Format.normalize_formats("both") == [Format.WAV, Format.MP3]
+
+    # SpeakerMode IntEnum
+    assert isinstance(SpeakerMode.Predefined, int)
+    assert isinstance(SpeakerMode.Clone, int)
+    assert SpeakerMode.Predefined == 0
+    assert SpeakerMode.Clone == 1
+    assert int(SpeakerMode.Predefined) == 0
+    assert int(SpeakerMode.Clone) == 1
+    assert SpeakerMode("Predefined Speaker") == SpeakerMode.Predefined
+    assert SpeakerMode("Custom Voice Clone") == SpeakerMode.Clone
+    assert SpeakerMode("predefined") == SpeakerMode.Predefined
+    assert SpeakerMode("clone") == SpeakerMode.Clone
+    assert SpeakerMode(0) == SpeakerMode.Predefined
+    assert SpeakerMode(1) == SpeakerMode.Clone
+    assert str(SpeakerMode.Predefined) == "Predefined Speaker"
+    assert str(SpeakerMode.Clone) == "Custom Voice Clone"
+    assert SpeakerMode.Predefined == "Predefined Speaker"
+    assert SpeakerMode.Clone == "Custom Voice Clone"
     print("[PASS] Enums verified.")
 
 
 def test_config_defaults():
     cfg = Config()
     assert cfg.checkpoint == "checkpoint.pt"
-    assert cfg.speaker_mode == "Predefined Speaker"
-    assert cfg.predefined_speaker in ("osim", "1")
-    assert cfg.clone_audio is None
-    assert cfg.clone_text == ""
+    assert isinstance(cfg.speaker, Speaker)
+    assert cfg.speaker.mode == SpeakerMode.Predefined
+    assert cfg.speaker.id in ("osim", "1")
     assert cfg.text == DEFAULT_TEXT
     assert cfg.pause_duration == 0.3
     assert cfg.temperature == 1.0
@@ -89,11 +109,34 @@ def test_config_dicts():
     assert d["top_k"] == 80
     assert d["chain_speaker"] == 1
     assert d["max_chunk_size"] == 75
+    assert "speaker_mode" not in d
+    assert "clone" not in d
+    assert "speaker" in d
+    assert isinstance(d["speaker"], dict)
+    assert d["speaker"]["mode"] == 0
+    assert d["speaker"]["id"] in ("osim", "1")
+
     cfg_from_d = Config.from_dict(d)
     assert cfg_from_d.temperature == 1.2
     assert cfg_from_d.mbd == MbdMode.Enabled
     assert cfg_from_d.chain_speaker == ChainMode.Enabled
     assert cfg_from_d.max_chunk_size == 75
+    assert isinstance(cfg_from_d.speaker, Speaker)
+    assert cfg_from_d.speaker.mode == SpeakerMode.Predefined
+
+    # Test with custom clone speaker
+    clone_spk = Speaker(id="custom", filename="custom.wav", text="שלום", mode=SpeakerMode.Clone)
+    cfg_clone = Config(speaker=clone_spk)
+    d_clone = cfg_clone.to_dict()
+    assert d_clone["speaker"]["id"] == "custom"
+    assert d_clone["speaker"]["mode"] == 1
+    assert d_clone["speaker"]["filename"] == "custom.wav"
+    assert d_clone["speaker"]["text"] == "שלום"
+    cfg_restored = Config.from_dict(d_clone)
+    assert isinstance(cfg_restored.speaker, Speaker)
+    assert cfg_restored.speaker.mode == SpeakerMode.Clone
+    assert cfg_restored.speaker.id == "custom"
+
     cfg_inst = Config()
     cfg_inst.from_dict(d)
     assert cfg_inst.temperature == 1.2
@@ -140,9 +183,38 @@ def test_json_methods():
     print("[PASS] dumpJson, saveJson, loadJson, and reset verified.")
 
 
+def test_standalone_speaker_config():
+    fake_audio_bytes = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00"
+    b64_str = base64.b64encode(fake_audio_bytes).decode("utf-8")
+    cfg_dict = {
+        "speaker": {
+            "mode": 1,
+            "id": "remote_clone",
+            "filename": "non_existent_file.wav",
+            "ext": "wav",
+            "text": "טקסט קול מרוחק",
+            "data": b64_str,
+        }
+    }
+    cfg = Config.from_dict(cfg_dict)
+    assert isinstance(cfg.speaker, Speaker)
+    assert cfg.speaker.mode == SpeakerMode.Clone
+    assert cfg.speaker.id == "remote_clone"
+    assert not os.path.exists(cfg.speaker.filename)
+    # resolve_audio_path extracts base64 data to a valid temp file
+    temp_path = cfg.speaker.resolve_audio_path()
+    assert os.path.exists(temp_path)
+    with open(temp_path, "rb") as f:
+        assert f.read() == fake_audio_bytes
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+    print("[PASS] Standalone speaker config serialization and extraction verified.")
+
+
 if __name__ == "__main__":
     test_enums()
     test_config_defaults()
     test_config_dicts()
     test_json_methods()
+    test_standalone_speaker_config()
     print("\n🎉 ALL TESTS IN tests/test_config.py PASSED SUCCESSFULLY!")

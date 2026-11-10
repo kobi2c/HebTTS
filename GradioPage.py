@@ -17,10 +17,12 @@ import torch
 import torchaudio
 from config import (
     Config,
+    SpeakerMode,
     Format,
     MbdMode,
     RandomMode,
     NikudMode,
+    Speaker,
     SpeakerStore,
     CheckpointStore,
 )
@@ -48,8 +50,8 @@ class GradioPage:
     def update_config_from_ui(
         self,
         checkpoint: str,
-        speaker_mode: str,
-        predefined_speaker: str,
+        speaker_mode: Union[SpeakerMode, int, str],
+        speaker: str,
         clone_audio: Optional[str],
         clone_text: str,
         text: str,
@@ -64,10 +66,12 @@ class GradioPage:
     ) -> Config:
         """Updates self.config attributes in-place from UI components with type conversions."""
         self.config.checkpoint = str(checkpoint)
-        self.config.speaker_mode = str(speaker_mode)
-        self.config.predefined_speaker = str(predefined_speaker)
-        self.config.clone_audio = clone_audio
-        self.config.clone_text = str(clone_text or "")
+        self.config.speaker = Speaker.create(
+            mode=SpeakerMode(speaker_mode),
+            id=str(speaker) if speaker is not None else None,
+            clone_path=Path(clone_audio) if clone_audio else None,
+            clone_text=clone_text,
+        )
         self.config.text = str(text or "")
         self.config.pause_duration = float(pause_duration)
         self.config.temperature = float(temperature)
@@ -81,12 +85,24 @@ class GradioPage:
 
     def get_ui_values_from_config(self) -> List[Any]:
         """Returns list of values from self.config corresponding to the UI stateful components."""
+        spk = self.config.speaker
+        if spk and spk.mode == SpeakerMode.Clone:
+            spk_mode_str = str(SpeakerMode.Clone)
+            spk_id = "osim"
+            clone_aud = spk.resolve_audio_path() if (spk.exists or spk.data) else None
+            clone_txt = spk.text or ""
+        else:
+            spk_mode_str = str(SpeakerMode.Predefined)
+            spk_id = spk.id if spk else "osim"
+            clone_aud = None
+            clone_txt = ""
+
         return [
             self.config.checkpoint,
-            self.config.speaker_mode,
-            self.config.predefined_speaker,
-            self.config.clone_audio,
-            self.config.clone_text,
+            spk_mode_str,
+            spk_id,
+            clone_aud,
+            clone_txt,
             self.config.text,
             self.config.pause_duration,
             self.config.temperature,
@@ -184,22 +200,19 @@ class GradioPage:
         nikud_mode = NikudMode(int(cfg.nikud_converter))
 
         # 1. Resolve speaker prompt audio and text
-        if cfg.speaker_mode == "Predefined Speaker":
-            spk = SpeakerStore().find(cfg.predefined_speaker)
-            if not spk:
-                raise gr.Error(f"Predefined speaker '{cfg.predefined_speaker}' not found.")
-            prompt_audio = str(spk.full_path)
-            prompt_text = spk.txt
+        spk = cfg.speaker
+        if not spk:
+            raise gr.Error("Speaker not configured.")
+        if spk.mode == SpeakerMode.Predefined:
+            prompt_audio = spk.resolve_audio_path()
+            prompt_text = spk.text
         else:  # Custom Voice Clone
-            exts_str = ", ".join(Format.extensions())
-            if not cfg.clone_audio or not os.path.exists(cfg.clone_audio):
-                raise gr.Error(f"Please upload a reference audio ({exts_str}) for voice cloning.")
-            if Path(cfg.clone_audio).suffix.lower() not in Format.extensions():
-                raise gr.Error(f"Unsupported reference audio format. Supported formats: {exts_str}")
-            if not cfg.clone_text or not cfg.clone_text.strip():
+            if not spk.exists and not spk.data:
+                raise gr.Error("Please upload a reference audio for voice cloning.")
+            if not spk.text or not spk.text.strip():
                 raise gr.Error("Please provide reference transcript text corresponding to the clone audio.")
-            prompt_audio = cfg.clone_audio
-            prompt_text = cfg.clone_text.strip()
+            prompt_audio = spk.resolve_audio_path()
+            prompt_text = spk.text.strip()
 
         # 2. Seed handling
         if random_mode == RandomMode.Enabled:
@@ -275,10 +288,12 @@ class GradioPage:
         def get_speaker_preview(spk_id: str) -> Tuple[Optional[str], str]:
             spk = SpeakerStore().find(spk_id)
             if spk:
-                return str(spk.full_path), spk.txt
+                return str(spk.full_path), spk.text
             return None, ""
 
-        default_preview_audio, default_preview_text = get_speaker_preview(self.config.predefined_speaker)
+        default_preview_audio, default_preview_text = get_speaker_preview(
+            self.config.speaker.id if self.config.speaker else default_speaker
+        )
 
         theme = gr.themes.Soft(
             primary_hue="blue",
@@ -313,15 +328,15 @@ class GradioPage:
 
                     speaker_mode_radio = gr.Radio(
                         choices=["Predefined Speaker", "Custom Voice Clone"],
-                        value=self.config.speaker_mode,
+                        value=self.config.speaker.mode if self.config.speaker else SpeakerMode.Predefined,
                         label="Speaker Mode",
                     )
 
                     # Predefined speaker controls
                     with gr.Group(visible=True) as predefined_group:
-                        predefined_speaker = gr.Dropdown(
+                        speaker_dropdown = gr.Dropdown(
                             choices=speaker_names,
-                            value=self.config.predefined_speaker,
+                            value=self.config.speaker.id if self.config.speaker else default_speaker,
                             label="Predefined Speaker",
                             info="Select a speaker from speakers/speakers.yaml",
                         )
@@ -444,8 +459,8 @@ class GradioPage:
             # --- Interactive Callbacks ---
 
             # Switch between Predefined Speaker and Custom Voice Clone groups
-            def toggle_speaker_mode(mode: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-                is_predefined = (mode == "Predefined Speaker")
+            def toggle_speaker_mode(mode: Union[SpeakerMode, int, str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+                is_predefined = (SpeakerMode(mode) == SpeakerMode.Predefined)
                 return gr.update(visible=is_predefined), gr.update(visible=not is_predefined)
 
             speaker_mode_radio.change(
@@ -459,9 +474,9 @@ class GradioPage:
                 aud, txt = get_speaker_preview(spk)
                 return aud, txt
 
-            predefined_speaker.change(
+            speaker_dropdown.change(
                 fn=on_predefined_change,
-                inputs=[predefined_speaker],
+                inputs=[speaker_dropdown],
                 outputs=[speaker_preview_audio, speaker_preview_text],
             )
 
@@ -523,7 +538,7 @@ class GradioPage:
             stateful_components = [
                 checkpoint_dropdown,
                 speaker_mode_radio,
-                predefined_speaker,
+                speaker_dropdown,
                 clone_audio,
                 clone_text,
                 text_input,
@@ -564,7 +579,8 @@ class GradioPage:
             # Restore Defaults Callback
             def reset_to_defaults():
                 self.config.reset()
-                aud, txt = get_speaker_preview(self.config.predefined_speaker)
+                spk_id = self.config.speaker.id if self.config.speaker else "osim"
+                aud, txt = get_speaker_preview(spk_id)
                 return (
                     *self.get_ui_values_from_config(),
                     aud,

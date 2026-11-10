@@ -15,24 +15,24 @@ from make_voice import VoiceMaker, VoiceMakerParser
 
 def test_mki_parsing_with_config():
     vm = VoiceMaker()
-    base_cfg = Config(predefined_speaker="osim", temperature=1.0)
+    base_cfg = Config(speaker="osim", temperature=1.0)
     lines = [
         "[This is a comment]",
-        "@{\"predefined_speaker\": \"speaker2\", \"temperature\": 0.6}",
+        "@{\"speaker\": \"speaker2\", \"temperature\": 0.6}",
         "שלום שורה ראשונה",
-        "!{\"predefined_speaker\": \"speaker3\"}",
+        "!{\"speaker\": \"speaker3\"}",
         "שלום שורה שנייה",
     ]
     blocks = vm.parse_mki(lines, base_cfg)
     assert len(blocks) == 2
     # Block 1: incremental update
     b1_cfg, b1_text = blocks[0]
-    assert b1_cfg.predefined_speaker == "speaker2"
+    assert b1_cfg.speaker.id == "speaker2"
     assert b1_cfg.temperature == 0.6
     assert b1_text == "שלום שורה ראשונה"
     # Block 2: reset to base + update
     b2_cfg, b2_text = blocks[1]
-    assert b2_cfg.predefined_speaker == "speaker3"
+    assert b2_cfg.speaker.id == "speaker3"
     assert b2_cfg.temperature == 1.0  # reset back to base_cfg
     assert b2_text == "שלום שורה שנייה"
 

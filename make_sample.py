@@ -192,8 +192,8 @@ class SampleMaker:
             speakers = self.speakers.list()
         fields = [
             {"title": "ID"         ,  "width": 15, "value": lambda spk: spk.id},
-            {"title": "Audio-File" ,  "width": 15, "value": lambda spk: spk.wav},
-            {"title": "Audio-Text" ,  "width": 0,  "value": lambda spk: spk.txt[:32] + "..." if len(spk.txt) > 35 else spk.txt},
+            {"title": "Audio-File" ,  "width": 15, "value": lambda spk: spk.filename},
+            {"title": "Audio-Text" ,  "width": 0,  "value": lambda spk: spk.text[:32] + "..." if len(spk.text) > 35 else spk.text},
         ]
         self._print_table("Available speakers:", speakers, fields)
 
@@ -222,7 +222,7 @@ class SampleMaker:
     def resolve_speaker(self, speaker_arg, speakers=None):
         spk = self.speakers.find(speaker_arg)
         if spk:
-            return spk.id, {"text-prompt": spk.txt, "audio-prompt": str(spk.full_path)}
+            return spk.id, {"text-prompt": spk.text, "audio-prompt": str(spk.full_path)}
 
         print(f"Error: Speaker '{speaker_arg}' not found.")
         self.print_speakers(speakers)

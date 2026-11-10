@@ -6,13 +6,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import torch
-
 # Ensure project root is in sys.path
 root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
 import tests.setup_env  # noqa: F401
+
 
 from config import Format
 from make_sample import SampleMaker, SampleMakerParser, SampleMake, Sampler, SamplerParser

@@ -101,7 +101,7 @@ def test_checkpoint_data():
     assert cp_abs.full_path == Path("checkpoints/abs_model.pt")
     mgr.clear()
     assert mgr._list is None
-    print("[PASS] CheckpointData (load, list, find, clear) verified.")
+    print("[PASS] CheckpointStore (load, list, find, clear) verified.")
 
 
 if __name__ == "__main__":

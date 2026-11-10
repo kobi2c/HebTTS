@@ -7,7 +7,7 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional, Union
 
-from .Speaker import Speaker, SpeakerStore
+from .Speaker import Speaker, SpeakerStore, SpeakerMode
 from .Checkpoint import Checkpoint, CheckpointStore
 
 
@@ -34,31 +34,6 @@ DEFAULT_TEXT: str = (
     "שלום, זהו מבחן דיבור עבור מודל הדיבור בעברית.\n"
     "המודל מאפשר שכפול קול ויצירת דיבור טבעי באיכות גבוהה."
 )
-
-
-def audio_to_base64(filepath: Optional[str]) -> Optional[Dict[str, str]]:
-    """Encodes an audio file on disk to a self-contained base64 dictionary."""
-    if not filepath or not os.path.exists(filepath):
-        return None
-    with open(filepath, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("utf-8")
-    ext = os.path.splitext(filepath)[1] or ".wav"
-    return {"ext": ext, "data": encoded}
-
-
-def base64_to_audio(b64_dict: Optional[Union[Dict[str, str], str]]) -> Optional[str]:
-    """Decodes a base64 dictionary to a temporary audio file on disk."""
-    if not b64_dict:
-        return None
-    if isinstance(b64_dict, str):
-        return b64_dict if os.path.exists(b64_dict) else None
-    if not isinstance(b64_dict, dict) or "data" not in b64_dict:
-        return None
-    ext = b64_dict.get("ext", ".wav")
-    decoded = base64.b64decode(b64_dict["data"])
-    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as f:
-        f.write(decoded)
-        return f.name
 
 
 class _LoadJsonDescriptor:
@@ -90,10 +65,7 @@ class _FromDictDescriptor:
 @dataclass
 class Config:
     checkpoint         : str = "checkpoint.pt"
-    speaker_mode       : str = "Predefined Speaker"
-    predefined_speaker : str = "1"
-    clone_audio        : Optional[str] = None
-    clone_text         : str = ""
+    speaker            : Speaker = field(default_factory=SpeakerStore.default)
     text               : str = DEFAULT_TEXT
     pause_duration     : float = 0.3
     temperature        : float = 1.0
@@ -105,18 +77,16 @@ class Config:
     chain_speaker      : ChainMode = ChainMode.Disabled
     max_chunk_size     : int = 100
 
+    def __post_init__(self) -> None:
+        self.speaker = SpeakerStore.resolve(self.speaker)
+
     def reset(self) -> "Config":
         """Resets all configuration fields in-place to their default values."""
         checkpoints = [c.path for c in CheckpointStore().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
-        speakers = SpeakerStore().list()
-        default_speaker = speakers[0].id if speakers else "osim"
 
         self.checkpoint = default_checkpoint
-        self.speaker_mode = "Predefined Speaker"
-        self.predefined_speaker = default_speaker
-        self.clone_audio = None
-        self.clone_text = ""
+        self.speaker = SpeakerStore.default()
         self.text = DEFAULT_TEXT
         self.pause_duration = 0.3
         self.temperature = 1.0
@@ -133,10 +103,7 @@ class Config:
         """Converts configuration fields to a standard dictionary."""
         return {
             "checkpoint": self.checkpoint,
-            "speaker_mode": self.speaker_mode,
-            "predefined_speaker": self.predefined_speaker,
-            "clone_audio": self.clone_audio,
-            "clone_text": self.clone_text,
+            "speaker": self.speaker.to_dict(embed_data=True) if self.speaker else {},
             "text": self.text,
             "pause_duration": float(self.pause_duration),
             "temperature": float(self.temperature),
@@ -153,18 +120,8 @@ class Config:
         """Updates configuration fields in-place from a dictionary."""
         if "checkpoint" in data and data["checkpoint"] is not None:
             self.checkpoint = str(data["checkpoint"])
-        if "speaker_mode" in data and data["speaker_mode"] is not None:
-            self.speaker_mode = str(data["speaker_mode"])
-        if "predefined_speaker" in data and data["predefined_speaker"] is not None:
-            self.predefined_speaker = str(data["predefined_speaker"])
-        if "clone_audio" in data:
-            raw_audio = data["clone_audio"]
-            if isinstance(raw_audio, dict) and "data" in raw_audio:
-                self.clone_audio = base64_to_audio(raw_audio)
-            else:
-                self.clone_audio = raw_audio
-        if "clone_text" in data and data["clone_text"] is not None:
-            self.clone_text = str(data["clone_text"])
+        if "speaker" in data and data["speaker"] is not None:
+            self.speaker = SpeakerStore.resolve(data["speaker"])
         if "text" in data and data["text"] is not None:
             self.text = str(data["text"])
         if "pause_duration" in data and data["pause_duration"] is not None:
@@ -190,10 +147,8 @@ class Config:
     from_dict = _FromDictDescriptor()
 
     def dumpJson(self, indent: int = 4) -> str:
-        """Serializes configuration to a JSON string with base64 encoded audio."""
+        """Serializes configuration to a standalone JSON string with embedded base64 audio."""
         d = self.to_dict()
-        if self.clone_audio and isinstance(self.clone_audio, str) and os.path.exists(self.clone_audio):
-            d["clone_audio"] = audio_to_base64(self.clone_audio)
         return json.dumps(d, indent=indent, ensure_ascii=False)
 
     def saveJson(self, file_path: Union[str, Path], indent: int = 4) -> str:

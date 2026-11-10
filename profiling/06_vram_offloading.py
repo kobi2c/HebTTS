@@ -38,7 +38,7 @@ def run_benchmark():
     vm = VoiceMaker()
     cfg = Config().reset()
     cfg.mbd = 1
-    cfg.predefined_speaker = "1"
+    cfg.speaker = "1"
 
     model, audio_tokenizer, text_collater, alef_bert_tokenizer = vm.page.load_model_if_needed(
         cfg.checkpoint, mbd=cfg.mbd
