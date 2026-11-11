@@ -13,15 +13,13 @@ import utils
 import gradio as gr
 import numpy as np
 import soundfile as sf
-import torch
-import torchaudio
 from config import (
     Config,
     SpeakerMode,
     SpeakerSample,
     Format,
     MbdMode,
-    RandomMode,
+    SeedMode,
     NikudMode,
     Speaker,
     LocalSpeaker,
@@ -63,9 +61,9 @@ class GradioPage:
         temperature: float,
         top_k: int,
         mbd: Union[MbdMode, int, bool],
-        seed_number: int,
-        randomize_seed: Union[RandomMode, int, bool],
-        nikud_converter: Union[NikudMode, int, bool],
+        seed: int,
+        seed_mode: Union[SeedMode, int, bool],
+        nikud_mode: Union[NikudMode, int, bool],
         max_chunk_size: int = 100,
     ) -> Config:
         """Updates self.config attributes in-place from UI components with type conversions."""
@@ -83,9 +81,9 @@ class GradioPage:
         self.config.temperature = float(temperature)
         self.config.top_k = int(top_k)
         self.config.mbd = MbdMode(int(mbd))
-        self.config.seed_number = int(seed_number)
-        self.config.randomize_seed = RandomMode(int(randomize_seed))
-        self.config.nikud_converter = NikudMode(int(nikud_converter))
+        self.config.seed = int(seed)
+        self.config.seed_mode = SeedMode(int(seed_mode))
+        self.config.nikud_mode = NikudMode(int(nikud_mode))
         self.config.max_chunk_size = int(max_chunk_size)
         return self.config
 
@@ -106,9 +104,9 @@ class GradioPage:
             self.config.temperature,
             self.config.top_k,
             int(self.config.mbd),
-            self.config.seed_number,
-            int(self.config.randomize_seed),
-            int(self.config.nikud_converter),
+            self.config.seed,
+            int(self.config.seed_mode),
+            int(self.config.nikud_mode),
             int(self.config.max_chunk_size),
         ]
 
@@ -150,14 +148,6 @@ class GradioPage:
         if not spk:
             raise gr.Error("Speaker not configured.")
 
-        # Seed handling
-        random_mode = RandomMode(int(cfg.randomize_seed))
-        if random_mode == RandomMode.Enabled:
-            seed = int(torch.randint(0, 2**32 - 1, (1,)).item())
-            cfg.seed_number = seed
-        else:
-            seed = int(cfg.seed_number)
-
         def report_progress(idx: int, tot: int, desc: str) -> None:
             progress((idx, tot), desc=desc)
 
@@ -176,11 +166,11 @@ class GradioPage:
 
         # Converted Ktiv-Male text if disambiguation was applied
         ktiv_male_text = ""
-        nikud_mode = NikudMode(int(cfg.nikud_converter))
+        nikud_mode = NikudMode(int(cfg.nikud_mode))
         if nikud_mode == NikudMode.Enabled and has_nikud(cfg.text):
             ktiv_male_text = convert_nikud_text(cfg.text)
 
-        return (self.engine.sample_rate, audio_np), seed, ktiv_male_text
+        return (self.engine.sample_rate, audio_np), cfg.seed, ktiv_male_text
 
     def build_interface(self) -> gr.Blocks:
         checkpoints = [c.path for c in CheckpointStore().list()]
@@ -322,7 +312,7 @@ class GradioPage:
                         )
                         nikud_checkbox = gr.Checkbox(
                             label="Phonetic Nikud / Ktiv-Male Disambiguation",
-                            value=bool(self.config.nikud_converter),
+                            value=bool(self.config.nikud_mode),
                             info="Use phonikud to phonetically convert vocalized words to Ktiv-Male.",
                         )
                         mbd_checkbox = gr.Checkbox(
@@ -359,8 +349,8 @@ class GradioPage:
                                 info="Top-K sampling parameter.",
                             )
                         with gr.Row():
-                            seed_number = gr.Number(label="Seed", value=self.config.seed_number, precision=0)
-                            randomize_seed = gr.Checkbox(label="Randomize Seed", value=bool(self.config.randomize_seed))
+                            seed_input = gr.Number(label="Seed", value=self.config.seed, precision=0)
+                            seed_mode_checkbox = gr.Checkbox(label="Randomize Seed", value=bool(self.config.seed_mode))
 
             # --- Interactive Callbacks ---
 
@@ -452,8 +442,8 @@ class GradioPage:
                 temp_slider,
                 topk_slider,
                 mbd_checkbox,
-                seed_number,
-                randomize_seed,
+                seed_input,
+                seed_mode_checkbox,
                 nikud_checkbox,
                 max_chunk_slider,
             ]
@@ -466,7 +456,7 @@ class GradioPage:
             generate_button.click(
                 fn=on_ui_generate,
                 inputs=stateful_components,
-                outputs=[output_audio, seed_number, ktiv_male_display],
+                outputs=[output_audio, seed_input, ktiv_male_display],
             )
 
             # Settings Import & Export

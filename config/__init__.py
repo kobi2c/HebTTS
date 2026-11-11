@@ -1,7 +1,7 @@
 from .Config import (
     Config,
     MbdMode,
-    RandomMode,
+    SeedMode,
     NikudMode,
     ChainMode,
     DEFAULT_TEXT,
@@ -23,7 +23,7 @@ __all__ = [
     "SpeakerStore",
     "SpeakerMode",
     "MbdMode",
-    "RandomMode",
+    "SeedMode",
     "NikudMode",
     "ChainMode",
     "Format",

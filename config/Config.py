@@ -16,7 +16,7 @@ class MbdMode(IntEnum):
     Enabled = 1
 
 
-class RandomMode(IntEnum):
+class SeedMode(IntEnum):
     Disabled = 0
     Enabled = 1
 
@@ -71,9 +71,9 @@ class Config:
     temperature        : float = 1.0
     top_k              : int = 50
     mbd                : MbdMode = MbdMode.Disabled
-    seed_number        : int = 420
-    randomize_seed     : RandomMode = RandomMode.Enabled
-    nikud_converter    : NikudMode = NikudMode.Enabled
+    seed               : int = 420
+    seed_mode          : SeedMode = SeedMode.Enabled
+    nikud_mode         : NikudMode = NikudMode.Enabled
     chain_speaker      : ChainMode = ChainMode.Disabled
     max_chunk_size     : int = 100
 
@@ -92,9 +92,9 @@ class Config:
         self.temperature = 1.0
         self.top_k = 50
         self.mbd = MbdMode.Disabled
-        self.seed_number = 420
-        self.randomize_seed = RandomMode.Enabled
-        self.nikud_converter = NikudMode.Enabled
+        self.seed = 420
+        self.seed_mode = SeedMode.Enabled
+        self.nikud_mode = NikudMode.Enabled
         self.chain_speaker = ChainMode.Disabled
         self.max_chunk_size = 100
         return self
@@ -109,9 +109,9 @@ class Config:
             "temperature": float(self.temperature),
             "top_k": int(self.top_k),
             "mbd": int(self.mbd),
-            "seed_number": int(self.seed_number),
-            "randomize_seed": int(self.randomize_seed),
-            "nikud_converter": int(self.nikud_converter),
+            "seed": int(self.seed),
+            "seed_mode": int(self.seed_mode),
+            "nikud_mode": int(self.nikud_mode),
             "chain_speaker": int(self.chain_speaker),
             "max_chunk_size": int(self.max_chunk_size),
         }
@@ -132,12 +132,17 @@ class Config:
             self.top_k = int(data["top_k"])
         if "mbd" in data and data["mbd"] is not None:
             self.mbd = MbdMode(int(data["mbd"]))
-        if "seed_number" in data and data["seed_number"] is not None:
-            self.seed_number = int(data["seed_number"])
-        if "randomize_seed" in data and data["randomize_seed"] is not None:
-            self.randomize_seed = RandomMode(int(data["randomize_seed"]))
-        if "nikud_converter" in data and data["nikud_converter"] is not None:
-            self.nikud_converter = NikudMode(int(data["nikud_converter"]))
+        if "seed" in data and data["seed"] is not None:
+            self.seed = int(data["seed"])
+        if "seed_mode" in data and data["seed_mode"] is not None:
+            self.seed_mode = SeedMode(int(data["seed_mode"]))
+        if "nikud_mode" in data and data["nikud_mode"] is not None:
+            self.nikud_mode = NikudMode(int(data["nikud_mode"]))
+        if "chain_speaker" in data and data["chain_speaker"] is not None:
+            self.chain_speaker = ChainMode(int(data["chain_speaker"]))
+        if "max_chunk_size" in data and data["max_chunk_size"] is not None:
+            self.max_chunk_size = int(data["max_chunk_size"])
+        return self
         if "chain_speaker" in data and data["chain_speaker"] is not None:
             self.chain_speaker = ChainMode(int(data["chain_speaker"]))
         if "max_chunk_size" in data and data["max_chunk_size"] is not None:

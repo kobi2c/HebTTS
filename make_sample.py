@@ -111,8 +111,9 @@ class SampleMakerParser(argparse.ArgumentParser):
             help="Enable Multi-Band Diffusion vocoder",
         )
         self.add_argument(
-            "--nikud-converter",
+            "--nikud-mode",
             action=argparse.BooleanOptionalAction,
+            dest="nikud_mode",
             default=True,
             help="Enable automatic phonetic Nikud / Ktiv-Male disambiguation (default: True)",
         )
@@ -138,7 +139,7 @@ class SampleMaker:
         top_k: int = 50,
         temperature: float = 1.0,
         mbd: bool = False,
-        nikud_converter: bool = True,
+        nikud_mode: bool = True,
         speaker_list: bool = False,
         checkpoint_list: bool = False,
     ) -> None:
@@ -163,7 +164,7 @@ class SampleMaker:
         self.top_k: int = top_k
         self.temperature: float = temperature
         self.mbd: bool = mbd
-        self.nikud_converter: bool = nikud_converter
+        self.nikud_mode: bool = nikud_mode
         self.speaker_list: bool = speaker_list
         self.checkpoint_list: bool = checkpoint_list
 
@@ -271,7 +272,7 @@ class SampleMaker:
         self.top_k = int(parsed.top_k)
         self.temperature = float(parsed.temperature)
         self.mbd = bool(parsed.mbd)
-        self.nikud_converter = bool(parsed.nikud_converter)
+        self.nikud_mode = bool(parsed.nikud_mode)
 
         if getattr(parsed, "engine", None):
             self.engine = get_engine(parsed.engine)
@@ -372,7 +373,7 @@ class SampleMaker:
             top_k=self.top_k,
             temperature=self.temperature,
             mbd=self.mbd,
-            nikud_converter=self.nikud_converter,
+            nikud_mode=self.nikud_mode,
             pause_duration=0.3,
         )
 

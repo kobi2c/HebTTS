@@ -18,7 +18,7 @@ from config import (
     LocalSpeaker,
     CloneSpeaker,
     MbdMode,
-    RandomMode,
+    SeedMode,
     NikudMode,
     DEFAULT_TEXT,
     CheckpointStore,
@@ -56,7 +56,7 @@ def test_gradio_page_config_helpers():
     assert ui_vals[8] == 50
     assert ui_vals[9] == 0  # int(MbdMode.Disabled)
     assert ui_vals[10] == 420
-    assert ui_vals[11] == 1  # int(RandomMode.Enabled)
+    assert ui_vals[11] == 1  # int(SeedMode.Enabled)
     assert ui_vals[12] == 1  # int(NikudMode.Enabled)
     assert ui_vals[13] == 100
     # Test update_config_from_ui
@@ -71,9 +71,9 @@ def test_gradio_page_config_helpers():
         temperature=0.8,
         top_k=40,
         mbd=1,
-        seed_number=123,
-        randomize_seed=0,
-        nikud_converter=0,
+        seed=123,
+        seed_mode=0,
+        nikud_mode=0,
         max_chunk_size=150,
     )
     assert gp.config.checkpoint == "custom_cp.pt"
@@ -86,9 +86,9 @@ def test_gradio_page_config_helpers():
     assert gp.config.temperature == 0.8
     assert gp.config.top_k == 40
     assert gp.config.mbd == MbdMode.Enabled
-    assert gp.config.seed_number == 123
-    assert gp.config.randomize_seed == RandomMode.Disabled
-    assert gp.config.nikud_converter == NikudMode.Disabled
+    assert gp.config.seed == 123
+    assert gp.config.seed_mode == SeedMode.Disabled
+    assert gp.config.nikud_mode == NikudMode.Disabled
     assert gp.config.max_chunk_size == 150
     # Export & Import settings
     exported_json = gp.export_settings()

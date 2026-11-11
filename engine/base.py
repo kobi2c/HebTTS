@@ -1,3 +1,4 @@
+import random
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Callable
 import numpy as np
@@ -34,6 +35,20 @@ class VoiceEngine(ABC):
     def load_model(self, checkpoint: Optional[str] = None, **kwargs: Any) -> Any:
         """Pre-loads model weights or verifies readiness (no-op by default)."""
         pass
+
+    def addSeed(self, seed: Optional[int] = None) -> int:
+        """
+        Configures the random seed for reproducible synthesis.
+        If seed is None, generates a random non-negative integer.
+        Returns the resolved seed.
+        """
+        if seed is None:
+            seed = random.randint(0, 2**31 - 1)
+        return int(seed)
+
+    def seed(self, seed: Optional[int] = None) -> int:
+        """Alias for addSeed."""
+        return self.addSeed(seed)
 
     @abstractmethod
     def create(

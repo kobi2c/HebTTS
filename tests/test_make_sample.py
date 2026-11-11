@@ -36,7 +36,7 @@ def test_sampler_args():
     assert s.top_k == 50
     assert s.temperature == 1.0
     assert s.mbd is False
-    assert s.nikud_converter is True
+    assert s.nikud_mode is True
     assert s.speaker_list is False
     assert s.checkpoint_list is False
     assert isinstance(s.create_parser(), SampleMakerParser)
@@ -53,7 +53,7 @@ def test_sampler_args():
         "--top-k", "40",
         "--temperature", "0.7",
         "--mbd",
-        "--no-nikud-converter",
+        "--no-nikud-mode",
     ])
     assert parsed.speaker == "osim"
     assert s.speaker == "osim"
@@ -66,7 +66,7 @@ def test_sampler_args():
     assert s.top_k == 40
     assert s.temperature == 0.7
     assert s.mbd is True
-    assert s.nikud_converter is False
+    assert s.nikud_mode is False
 
     # 3. Direct constructor initialization with fields
     s2 = SampleMaker(
@@ -78,7 +78,7 @@ def test_sampler_args():
         top_k=25,
         temperature=0.9,
         mbd=True,
-        nikud_converter=False,
+        nikud_mode=False,
     )
     assert s2.speaker == "osim"
     assert s2.checkpoint == "2"
@@ -88,7 +88,7 @@ def test_sampler_args():
     assert s2.top_k == 25
     assert s2.temperature == 0.9
     assert s2.mbd is True
-    assert s2.nikud_converter is False
+    assert s2.nikud_mode is False
 
     # 4. parse_args with existing Namespace
     parser = SampleMakerParser()

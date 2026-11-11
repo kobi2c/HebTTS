@@ -6,7 +6,7 @@ from typing import Any, Callable, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from config import CheckpointStore, Config, NoiseFix, RandomMode, Speaker, SpeakerSample
+from config import CheckpointStore, Config, NoiseFix, SeedMode, Speaker, SpeakerSample
 from nikud_converter import convert_nikud_text
 from utils import AttributeDict
 from valle.data import AudioTokenizer, tokenize_audio
@@ -132,10 +132,10 @@ class HebTTSEngine(VoiceEngine):
         top_k: int = 50,
         temperature: float = 1.0,
         mbd: bool = False,
-        nikud_converter: bool = True,
+        nikud_mode: bool = True,
     ) -> torch.Tensor:
         """Synthesizes a single line of Hebrew text using the loaded model and tokenizers."""
-        if nikud_converter:
+        if nikud_mode:
             text = convert_nikud_text(text)
             prompt_text = convert_nikud_text(prompt_text)
 
@@ -175,6 +175,18 @@ class HebTTSEngine(VoiceEngine):
 
         return samples[0].cpu()
 
+    def addSeed(self, seed: Optional[int] = None) -> int:
+        """
+        Configures the random seed for PyTorch and Python RNG.
+        If seed is None, generates a random non-negative integer.
+        Returns the resolved seed.
+        """
+        if seed is None:
+            seed = random.randint(0, 2**31 - 1)
+        seed = int(seed)
+        torch.manual_seed(seed)
+        return seed
+
     def create(
         self,
         speaker: Speaker,
@@ -198,11 +210,11 @@ class HebTTSEngine(VoiceEngine):
         prompt_text = sample.text
 
         # 2. Configure RNG seed
-        if cfg.randomize_seed == RandomMode.Enabled:
-            seed = random.randint(0, 2**31 - 1)
+        if cfg.seed_mode == SeedMode.Enabled:
+            resolved_seed = self.addSeed(None)
         else:
-            seed = int(cfg.seed_number)
-        torch.manual_seed(seed)
+            resolved_seed = self.addSeed(cfg.seed)
+        cfg.seed = resolved_seed
 
         # 3. Load model, vocoder, and tokenizers
         model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.load_model(
@@ -241,7 +253,7 @@ class HebTTSEngine(VoiceEngine):
                 top_k=int(cfg.top_k),
                 temperature=float(cfg.temperature),
                 mbd=bool(cfg.mbd),
-                nikud_converter=bool(cfg.nikud_converter),
+                nikud_mode=bool(cfg.nikud_mode),
             )
             if seg.shape[-1] > 0:
                 segments.append(seg)

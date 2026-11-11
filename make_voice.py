@@ -19,7 +19,7 @@ from config import (
     SpeakerSample,
     Format,
     MbdMode,
-    RandomMode,
+    SeedMode,
     NikudMode,
     ChainMode,
     SpeakerStore,

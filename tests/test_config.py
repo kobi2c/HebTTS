@@ -17,7 +17,7 @@ from config import (
     SpeakerMode,
     Format,
     MbdMode,
-    RandomMode,
+    SeedMode,
     NikudMode,
     ChainMode,
     Speaker,
@@ -28,7 +28,7 @@ from config import (
 
 
 def test_enums():
-    for enum_cls in (MbdMode, RandomMode, NikudMode, ChainMode):
+    for enum_cls in (MbdMode, SeedMode, NikudMode, ChainMode):
         assert enum_cls.Disabled == 0
         assert enum_cls.Enabled == 1
         assert int(enum_cls.Disabled) == 0
@@ -101,9 +101,9 @@ def test_config_defaults():
     assert cfg.temperature == 1.0
     assert cfg.top_k == 50
     assert cfg.mbd == MbdMode.Disabled
-    assert cfg.seed_number == 420
-    assert cfg.randomize_seed == RandomMode.Enabled
-    assert cfg.nikud_converter == NikudMode.Enabled
+    assert cfg.seed == 420
+    assert cfg.seed_mode == SeedMode.Enabled
+    assert cfg.nikud_mode == NikudMode.Enabled
     assert cfg.chain_speaker == ChainMode.Disabled
     assert cfg.max_chunk_size == 100
     print("[PASS] Config defaults verified.")
@@ -117,6 +117,9 @@ def test_config_dicts():
     assert d["top_k"] == 80
     assert d["chain_speaker"] == 1
     assert d["max_chunk_size"] == 75
+    assert d["seed"] == 420
+    assert d["seed_mode"] == 1
+    assert d["nikud_mode"] == 1
     assert "speaker_mode" not in d
     assert "clone" not in d
     assert "speaker" in d
@@ -129,6 +132,9 @@ def test_config_dicts():
     assert cfg_from_d.mbd == MbdMode.Enabled
     assert cfg_from_d.chain_speaker == ChainMode.Enabled
     assert cfg_from_d.max_chunk_size == 75
+    assert cfg_from_d.seed == 420
+    assert cfg_from_d.seed_mode == SeedMode.Enabled
+    assert cfg_from_d.nikud_mode == NikudMode.Enabled
     assert isinstance(cfg_from_d.speaker, Speaker)
     assert isinstance(cfg_from_d.speaker, LocalSpeaker)
 
@@ -151,6 +157,9 @@ def test_config_dicts():
     assert cfg_inst.mbd == MbdMode.Enabled
     assert cfg_inst.chain_speaker == ChainMode.Enabled
     assert cfg_inst.max_chunk_size == 75
+    assert cfg_inst.seed == 420
+    assert cfg_inst.seed_mode == SeedMode.Enabled
+    assert cfg_inst.nikud_mode == NikudMode.Enabled
     print("[PASS] Dict conversion verified.")
 
 

@@ -14,7 +14,7 @@ import numpy as np
 import soundfile as sf
 import torch
 
-from config import Config, Speaker, LocalSpeaker, SpeakerSample
+from config import Config, Speaker, LocalSpeaker, SpeakerSample, SeedMode
 from engine import VoiceEngine, HebTTSEngine, get_engine
 from make_voice import VoiceMaker
 
@@ -74,6 +74,12 @@ def test_voice_engine_abc():
     except TypeError:
         pass
 
+    # 3. addSeed on concrete subclass
+    dummy = DummyBeepEngine()
+    assert dummy.addSeed(42) == 42
+    s = dummy.addSeed(None)
+    assert isinstance(s, int) and s >= 0
+
     print("[PASS] VoiceEngine ABC contract verified.")
 
 
@@ -131,9 +137,12 @@ def test_heb_tts_engine_create():
     assert engine.last_tokens_str is None
     assert engine.device is not None
     assert engine.device_name is not None
+    assert engine.addSeed(999) == 999
+    rnd_s = engine.addSeed(None)
+    assert isinstance(rnd_s, int) and rnd_s >= 0
 
     spk = LocalSpeaker(id="osim", filename="osim.wav", text="שלום עולם")
-    cfg = Config(speaker=spk, temperature=0.8, top_k=40)
+    cfg = Config(speaker=spk, temperature=0.8, top_k=40, seed=777, seed_mode=SeedMode.Disabled)
 
     progress_events = []
     def on_progress(idx, total, desc):
@@ -153,6 +162,12 @@ def test_heb_tts_engine_create():
     assert len(progress_events) == 2
     assert engine.last_tokens_str == "195 -> 425 (+230)"
     assert engine.synthesize_line.call_count == 2
+    assert cfg.seed == 777
+
+    # SeedMode.Enabled generates random seed in cfg.seed
+    cfg_rnd = Config(speaker=spk, seed_mode=SeedMode.Enabled)
+    engine.create(speaker=spk, text="בדיקה", config=cfg_rnd)
+    assert isinstance(cfg_rnd.seed, int) and cfg_rnd.seed >= 0
 
     print("[PASS] HebTTSEngine create and token stats verified.")
 
