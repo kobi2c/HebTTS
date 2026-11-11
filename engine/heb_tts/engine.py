@@ -166,13 +166,16 @@ class HebTTSEngine(VoiceEngine):
             )
 
             is_cuda = "cuda" in str(self.device).lower()
-            if mbd and is_cuda and torch.cuda.is_available():
-                self.model.to("cpu")
-
-            samples = self.audio_tokenizer.decode([(encoded_frames.transpose(2, 1), enroll_x_lens)])
-
-            if mbd and is_cuda and torch.cuda.is_available():
-                self.model.to(self.device)
+            mbd_bool = bool(int(mbd))
+            if mbd_bool and getattr(self.audio_tokenizer, "mbd", None) is not None:
+                if is_cuda and torch.cuda.is_available():
+                    self.model.to("cpu")
+                    torch.cuda.empty_cache()
+                samples = self.audio_tokenizer.mbd_decode(encoded_frames.transpose(2, 1))
+                if is_cuda and torch.cuda.is_available():
+                    self.model.to(self.device)
+            else:
+                samples = self.audio_tokenizer.decode([(encoded_frames.transpose(2, 1), None)])
 
         return samples[0].cpu()
 

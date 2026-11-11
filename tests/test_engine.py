@@ -172,6 +172,59 @@ def test_heb_tts_engine_create():
     print("[PASS] HebTTSEngine create and token stats verified.")
 
 
+def test_heb_tts_engine_synthesize_line():
+    engine = HebTTSEngine()
+    engine.device = torch.device("cpu")
+
+    mock_model = MagicMock()
+    mock_model.inference.return_value = torch.zeros((1, 8, 50))
+    engine.model = mock_model
+
+    mock_audio_tok = MagicMock()
+    mock_audio_tok.decode.return_value = torch.zeros((1, 1, 24000))
+    mock_audio_tok.mbd_decode.return_value = torch.zeros((1, 1, 24000))
+    mock_audio_tok.mbd = MagicMock()
+    engine.audio_tokenizer = mock_audio_tok
+
+    mock_text_collater = MagicMock()
+    mock_text_collater.token2idx = {"tok1": 1, "tok2": 2}
+    mock_text_collater.side_effect = lambda seqs: (torch.zeros((1, 5)), torch.tensor([5]))
+    engine.text_collater = mock_text_collater
+
+    mock_alef_bert = MagicMock()
+    mock_alef_bert._tokenize.return_value = ["tok1", "tok2"]
+    engine.alef_bert_tokenizer = mock_alef_bert
+
+    # 1. Non-MBD synthesis: audio_tokenizer.decode called with [(frames, None)]
+    out = engine.synthesize_line(
+        text="שלום עולם",
+        audio_prompts=torch.zeros((1, 8, 20)),
+        prompt_text="פרומפט",
+        mbd=False,
+    )
+    assert out.shape == (1, 24000)
+    assert mock_audio_tok.decode.called
+    decode_call_arg = mock_audio_tok.decode.call_args[0][0]
+    assert isinstance(decode_call_arg, list)
+    assert len(decode_call_arg) == 1
+    assert isinstance(decode_call_arg[0], tuple)
+    assert decode_call_arg[0][1] is None, "Second element of decoded frame must be None (not scale/enroll_x_lens)"
+
+    # 2. MBD synthesis: audio_tokenizer.mbd_decode called
+    mock_audio_tok.decode.reset_mock()
+    out_mbd = engine.synthesize_line(
+        text="שלום עולם",
+        audio_prompts=torch.zeros((1, 8, 20)),
+        prompt_text="פרומפט",
+        mbd=True,
+    )
+    assert out_mbd.shape == (1, 24000)
+    assert mock_audio_tok.mbd_decode.called
+    assert not mock_audio_tok.decode.called
+
+    print("[PASS] HebTTSEngine synthesize_line device contracts and vocoder routing verified.")
+
+
 def test_voice_maker_with_custom_engine():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -202,5 +255,6 @@ if __name__ == "__main__":
     test_voice_engine_abc()
     test_get_engine_factory()
     test_heb_tts_engine_create()
+    test_heb_tts_engine_synthesize_line()
     test_voice_maker_with_custom_engine()
     print("\n🎉 ALL TESTS IN tests/test_engine.py PASSED SUCCESSFULLY!")

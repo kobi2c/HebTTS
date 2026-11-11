@@ -468,7 +468,21 @@ class AudioTokenizer:
         res = self.codec.encode(wav.to(self.device))
         return res
 
-    def decode(self, frames: torch.Tensor) -> torch.Tensor:
+    def decode(self, frames: Any) -> torch.Tensor:
+        if isinstance(frames, torch.Tensor):
+            frames = [(frames.to(self.device), None)]
+        elif isinstance(frames, list):
+            codec_frames = []
+            for item in frames:
+                if isinstance(item, tuple):
+                    code = item[0].to(self.device) if isinstance(item[0], torch.Tensor) else item[0]
+                    scale = item[1].to(self.device) if isinstance(item[1], torch.Tensor) else item[1]
+                    codec_frames.append((code, scale))
+                elif isinstance(item, torch.Tensor):
+                    codec_frames.append((item.to(self.device), None))
+                else:
+                    codec_frames.append(item)
+            frames = codec_frames
         return self.codec.decode(frames)
 
     def mbd_decode(self, frames: torch.Tensor) -> torch.Tensor:
