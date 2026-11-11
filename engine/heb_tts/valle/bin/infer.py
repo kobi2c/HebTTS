@@ -38,15 +38,15 @@ import torch
 import torchaudio
 from icefall.utils import AttributeDict, str2bool
 
-from valle.data import (
+from engine.heb_tts.valle.data import (
     AudioTokenizer,
     DacAudioTokenizer,
     TextTokenizer,
     tokenize_audio,
     tokenize_text,
 )
-from valle.data.collation import get_text_token_collater
-from valle.models import get_model
+from engine.heb_tts.valle.data.collation import get_text_token_collater
+from engine.heb_tts.valle.models import get_model
 
 
 def get_args():

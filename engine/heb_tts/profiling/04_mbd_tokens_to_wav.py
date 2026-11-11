@@ -26,7 +26,7 @@ docker run --gpus all --rm \\
 import time
 import utils
 import torch
-from valle.data.tokenizer import AudioTokenizer
+from engine.heb_tts.valle.data.tokenizer import AudioTokenizer
 
 
 def run_benchmark():

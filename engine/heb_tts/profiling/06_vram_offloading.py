@@ -27,7 +27,7 @@ import utils
 import torch
 from make_voice import VoiceMaker
 from config import Config
-from valle.data import tokenize_audio
+from engine.heb_tts.valle.data import tokenize_audio
 
 
 def run_benchmark():

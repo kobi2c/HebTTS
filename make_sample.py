@@ -120,8 +120,8 @@ class SampleMakerParser(argparse.ArgumentParser):
 
 
 class SampleMaker:
-    DEFAULT_TOKENS_FILE = "tokenizer/unique_words_tokens_all.k2symbols"
-    DEFAULT_VOCAB_FILE = "tokenizer/vocab.txt"
+    DEFAULT_TOKENS_FILE = "engine/heb_tts/tokenizer/unique_words_tokens_all.k2symbols"
+    DEFAULT_VOCAB_FILE = "engine/heb_tts/tokenizer/vocab.txt"
 
     def __init__(
         self,
@@ -224,10 +224,10 @@ class SampleMaker:
         self.print_checkpoints()
         sys.exit(1)
 
-    def resolve_speaker(self, speaker_arg: str, speakers=None) -> Tuple[str, Dict[str, str]]:
+    def resolve_speaker(self, speaker_arg: str, speakers=None) -> LocalSpeaker:
         spk = self.speakers.find(speaker_arg)
         if spk:
-            return spk.id, {"text-prompt": spk.text, "audio-prompt": str(spk.full_path)}
+            return spk
 
         print(f"Error: Speaker '{speaker_arg}' not found.")
         self.print_speakers(speakers)
@@ -362,10 +362,9 @@ class SampleMaker:
                     print("Please specify reference text with --clone-txt <file.txt>.")
                     sys.exit(1)
 
-            spk = CloneSpeaker(filename=prompt_audio, text=prompt_text)
+            spk = CloneSpeaker(id="clone", filename=prompt_audio, text=prompt_text, base="")
         else:
-            speaker_id, speaker_data = self.resolve_speaker(self.speaker, speakers)
-            spk = LocalSpeaker(id=speaker_id, filename=speaker_data["audio-prompt"], text=speaker_data["text-prompt"])
+            spk = self.resolve_speaker(self.speaker, speakers)
 
         cfg = Config(
             checkpoint=str(checkpoint_path),

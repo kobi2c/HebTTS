@@ -5,8 +5,11 @@ __pycache__
 *.py[cod]
 *$py.class
 *.pt
+**/*.pt
 *.wav
+**/*.wav
 *.mp3
+**/*.mp3
 out/
 sample.wav
 

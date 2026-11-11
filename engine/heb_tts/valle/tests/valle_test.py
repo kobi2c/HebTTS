@@ -20,8 +20,8 @@ import torch
 from icefall.utils import AttributeDict
 from torchmetrics.classification import MulticlassAccuracy
 
-from valle.data.input_strategies import PromptedFeatures
-from valle.models import NUM_MEL_BINS, get_model
+from engine.heb_tts.valle.data.input_strategies import PromptedFeatures
+from engine.heb_tts.valle.models import NUM_MEL_BINS, get_model
 
 
 class TestModel(unittest.TestCase):

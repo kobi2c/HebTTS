@@ -13,10 +13,10 @@ os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 from utils import AttributeDict
 
 
-from valle.data import AudioTokenizer, tokenize_audio
-from valle.data.collation import get_text_token_collater
-from valle.models import get_model
-from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
+from engine.heb_tts.valle.data import AudioTokenizer, tokenize_audio
+from engine.heb_tts.valle.data.collation import get_text_token_collater
+from engine.heb_tts.valle.models import get_model
+from engine.heb_tts.valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 
 
 def load_model(checkpoint, device):
@@ -215,21 +215,21 @@ def get_args():
     parser.add_argument(
         "--vocab-file",
         type=str,
-        default="tokenizer/vocab.txt",
+        default="engine/heb_tts/tokenizer/vocab.txt",
         help="vocab file for AlephBert"
     )
 
     parser.add_argument(
         "--tokens-file",
         type=str,
-        default="tokenizer/unique_words_tokens_all.k2symbols",
+        default="engine/heb_tts/tokenizer/unique_words_tokens_all.k2symbols",
         help="tokens file path"
     )
 
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="checkpoints/checkpoint_01.pt",
+        default="engine/heb_tts/checkpoints/checkpoint_01.pt",
         help="Path to the saved checkpoint.",
     )
 

@@ -9,11 +9,11 @@ import torch
 from config import CheckpointStore, Config, NoiseFix, SeedMode, Speaker, SpeakerSample
 from nikud_converter import convert_nikud_text
 from utils import AttributeDict
-from valle.data import AudioTokenizer, tokenize_audio
-from valle.data.collation import get_text_token_collater
-from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
-from valle.models import get_model
-from .base import VoiceEngine
+from engine.heb_tts.valle.data import AudioTokenizer, tokenize_audio
+from engine.heb_tts.valle.data.collation import get_text_token_collater
+from engine.heb_tts.valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
+from engine.heb_tts.valle.models import get_model
+from ..base import VoiceEngine
 
 
 class HebTTSEngine(VoiceEngine):
@@ -22,8 +22,9 @@ class HebTTSEngine(VoiceEngine):
     Caches model weights, vocoders, and prompt audio embeddings for optimal performance.
     """
 
-    DEFAULT_TOKENS_FILE = "valle/data/tokens.txt"
-    DEFAULT_VOCAB_FILE = "valle/data/vocab.txt"
+    PACKAGE_DIR = Path(__file__).resolve().parent
+    DEFAULT_TOKENS_FILE = str(PACKAGE_DIR / "tokenizer" / "unique_words_tokens_all.k2symbols")
+    DEFAULT_VOCAB_FILE = str(PACKAGE_DIR / "tokenizer" / "vocab.txt")
 
     def __init__(
         self,

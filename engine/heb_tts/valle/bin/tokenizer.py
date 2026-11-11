@@ -32,7 +32,7 @@ from lhotse import CutSet, NumpyHdf5Writer
 from lhotse.recipes.utils import read_manifests_if_cached
 from tqdm.auto import tqdm
 
-from valle.data import (
+from engine.heb_tts.valle.data import (
     AudioTokenConfig,
     AudioTokenConfigDac,
     DacAudioTokenizer,
@@ -40,8 +40,8 @@ from valle.data import (
     TextTokenizer,
     tokenize_text,
 )
-from valle.data.fbank import get_fbank_extractor
-from valle.utils import SymbolTable
+from engine.heb_tts.valle.data.fbank import get_fbank_extractor
+from engine.heb_tts.valle.utils import SymbolTable
 
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 

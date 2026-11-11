@@ -37,10 +37,10 @@ from lhotse.dataset.input_strategies import OnTheFlyFeatures
 from lhotse.utils import fix_random_seed
 from torch.utils.data import DataLoader
 
-from valle.data.collation import get_text_token_collater
-from valle.data.dataset import SpeechSynthesisDataset
-from valle.data.fbank import get_fbank_extractor
-from valle.data.input_strategies import PromptedPrecomputedFeatures
+from engine.heb_tts.valle.data.collation import get_text_token_collater
+from engine.heb_tts.valle.data.dataset import SpeechSynthesisDataset
+from engine.heb_tts.valle.data.fbank import get_fbank_extractor
+from engine.heb_tts.valle.data.input_strategies import PromptedPrecomputedFeatures
 
 PrecomputedFeatures = PrecomputedFeatures
 

@@ -69,6 +69,14 @@ class Speaker:
     base     : str = "speakers"
 
     def __post_init__(self) -> None:
+        if self.base and self.filename:
+            try:
+                p = Path(self.filename)
+                base_p = Path(self.base)
+                if p.is_relative_to(base_p):
+                    self.filename = p.relative_to(base_p).as_posix()
+            except Exception:
+                pass
         if self.ext:
             self.ext = self.ext.lstrip(".").lower()
         elif self.filename:
@@ -83,6 +91,11 @@ class Speaker:
         if p.is_absolute():
             return p
         if self.base:
+            try:
+                if p.is_relative_to(Path(self.base)):
+                    return p
+            except Exception:
+                pass
             return Path(self.base) / p
         return p
 

@@ -143,6 +143,12 @@ def test_speaker_data():
     assert sp_abs.filename == "abs_spk.wav"
     assert sp_abs.full_path == Path("speakers/abs_spk.wav")
 
+    # Test LocalSpeaker initialized directly with 'speakers/osim.wav' filename
+    sp_dup = LocalSpeaker(id="osim", filename="speakers/osim.wav", text="Test")
+    assert sp_dup.filename == "osim.wav"
+    assert sp_dup.full_path == Path("speakers/osim.wav")
+    assert "speakers/speakers" not in sp_dup.sample().path and "speakers\\speakers" not in sp_dup.sample().path
+
     # Test auto-discovery: .wav without .txt must NOT be discovered
     dummy_wav = Path("speakers/dummy_temp_spk.wav")
     dummy_txt = Path("speakers/dummy_temp_spk.txt")

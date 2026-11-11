@@ -29,7 +29,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch.nn import Embedding as ScaledEmbedding
 
-from valle.utils import Transpose
+from engine.heb_tts.valle.utils import Transpose
 
 
 class ActivationBalancerFunction(torch.autograd.Function):

@@ -16,7 +16,7 @@
 
 import unittest
 
-from valle.data import TextTokenizer
+from engine.heb_tts.valle.data import TextTokenizer
 
 
 class TestTextTokenizer(unittest.TestCase):

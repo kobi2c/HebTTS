@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from icefall.utils import AttributeDict
 
-from valle.models import NUM_MEL_BINS, get_model
+from engine.heb_tts.valle.models import NUM_MEL_BINS, get_model
 
 
 class TestModel(unittest.TestCase):

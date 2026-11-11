@@ -27,7 +27,7 @@ from lhotse.dataset.collation import collate_audio
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
 from lhotse.utils import ifnone
 
-from valle.data.collation import TextTokenCollater
+from engine.heb_tts.valle.data.collation import TextTokenCollater
 
 
 class SpeechSynthesisDataset(torch.utils.data.Dataset):

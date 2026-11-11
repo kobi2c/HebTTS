@@ -12,7 +12,17 @@ class Checkpoint:
     path      : str = ""
     info      : str = ""
     gdrive_id : Optional[str] = None
-    base      : str = "checkpoints"
+    base      : str = "engine/heb_tts/checkpoints"
+
+    def __post_init__(self) -> None:
+        if self.base and self.path:
+            try:
+                p = Path(self.path)
+                base_p = Path(self.base)
+                if p.is_relative_to(base_p):
+                    self.path = p.relative_to(base_p).as_posix()
+            except Exception:
+                pass
 
     @property
     def full_path(self) -> Path:
@@ -21,6 +31,11 @@ class Checkpoint:
         if p.is_absolute():
             return p
         if self.base:
+            try:
+                if p.is_relative_to(Path(self.base)):
+                    return p
+            except Exception:
+                pass
             return Path(self.base) / p
         else:
             return p
@@ -110,7 +125,16 @@ class CheckpointStore:
         """Finds the path to the checkpoints configuration file."""
         if path is not None:
             return str(path)
-        return "checkpoints/checkpoints.yaml"
+        default_yaml = Path("engine/heb_tts/checkpoints/checkpoints.yaml")
+        if default_yaml.exists():
+            return "engine/heb_tts/checkpoints/checkpoints.yaml"
+        root_yaml = Path(__file__).resolve().parent.parent / "engine" / "heb_tts" / "checkpoints" / "checkpoints.yaml"
+        if root_yaml.exists():
+            return str(root_yaml)
+        legacy_yaml = Path("checkpoints/checkpoints.yaml")
+        if legacy_yaml.exists():
+            return "checkpoints/checkpoints.yaml"
+        return "engine/heb_tts/checkpoints/checkpoints.yaml"
 
     def load(self, path: Union[str, Path, None] = None) -> List[Checkpoint]:
         """Loads checkpoints from YAML and discovers additional *.pt files in the checkpoints directory."""

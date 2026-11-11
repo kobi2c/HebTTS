@@ -30,7 +30,7 @@ from phonemizer.backend.espeak.words_mismatch import WordMismatch
 from phonemizer.punctuation import Punctuation
 from phonemizer.separator import Separator
 
-from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer
+from engine.heb_tts.valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer
 
 try:
     from pypinyin import Style, pinyin

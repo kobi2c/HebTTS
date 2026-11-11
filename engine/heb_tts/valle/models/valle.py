@@ -18,12 +18,12 @@ from typing import Dict, Iterator, List, Tuple, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from valle.utils import make_pad_mask
+from engine.heb_tts.valle.utils import make_pad_mask
 from torchmetrics.classification import MulticlassAccuracy
 
-from valle.data.input_strategies import PromptedFeatures
-from valle.modules.embedding import SinePositionalEmbedding, TokenEmbedding
-from valle.modules.transformer import (
+from engine.heb_tts.valle.data.input_strategies import PromptedFeatures
+from engine.heb_tts.valle.modules.embedding import SinePositionalEmbedding, TokenEmbedding
+from engine.heb_tts.valle.modules.transformer import (
     AdaptiveLayerNorm,
     LayerNorm,
     TransformerDecoderLayer,

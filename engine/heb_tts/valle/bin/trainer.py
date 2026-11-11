@@ -62,10 +62,10 @@ from torch.cuda.amp import GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 
-from valle.data import TtsDataModule
-from valle.models import add_model_arguments, get_model
-from valle.modules.optim import Eden, Eve, ScaledAdam
-from valle.modules.scheduler import get_scheduler
+from engine.heb_tts.valle.data import TtsDataModule
+from engine.heb_tts.valle.models import add_model_arguments, get_model
+from engine.heb_tts.valle.modules.optim import Eden, Eve, ScaledAdam
+from engine.heb_tts.valle.modules.scheduler import get_scheduler
 
 import wandb
 

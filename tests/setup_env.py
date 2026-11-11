@@ -26,6 +26,11 @@ for mod in [
     "valle.data.collation",
     "valle.data.hebrew_root_tokenizer",
     "valle.models",
+    "engine.heb_tts.valle",
+    "engine.heb_tts.valle.data",
+    "engine.heb_tts.valle.data.collation",
+    "engine.heb_tts.valle.data.hebrew_root_tokenizer",
+    "engine.heb_tts.valle.models",
 ]:
     if mod not in sys.modules:
         try:

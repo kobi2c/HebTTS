@@ -42,4 +42,11 @@ RUN uv sync --frozen --no-install-project && uv cache clean
 # Copy project files
 COPY . ./
 
+# Simplify container startup banner to only print CUDA version
+RUN rm -f /opt/nvidia/entrypoint.d/10-banner.sh \
+          /opt/nvidia/entrypoint.d/12-banner.sh \
+          /opt/nvidia/entrypoint.d/15-container-copyright.txt \
+          /opt/nvidia/entrypoint.d/30-container-license.txt \
+    && echo "CUDA Version ${CUDA_VERSION:-12.8.0}" > /opt/nvidia/entrypoint.d/10-banner.txt
+
 CMD ["bash"]

@@ -3,11 +3,11 @@ from pathlib import Path
 from transformers import BertTokenizer
 from tqdm import tqdm
 import logging
-from valle.utils import SymbolTable
+from engine.heb_tts.valle.utils import SymbolTable
 
 
 
-from valle.data import (
+from engine.heb_tts.valle.data import (
     TextTokenizer,
     tokenize_text
 )

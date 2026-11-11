@@ -15,7 +15,7 @@ from config import Checkpoint, CheckpointStore
 def test_checkpoint_data():
     mgr = CheckpointStore()
     assert mgr._list is None
-    assert mgr._main_path == "checkpoints/checkpoints.yaml"
+    assert mgr._main_path == "engine/heb_tts/checkpoints/checkpoints.yaml"
     checkpoints = mgr.list()
     assert isinstance(checkpoints, list) and len(checkpoints) >= 1
     assert all(isinstance(c, Checkpoint) for c in checkpoints)
@@ -23,7 +23,7 @@ def test_checkpoint_data():
     c1 = checkpoints[0]
     assert c1.id == "checkpoint_01"
     assert c1.path == "checkpoint_01.pt"
-    assert c1.full_path == Path("checkpoints/checkpoint_01.pt")
+    assert c1.full_path == Path("engine/heb_tts/checkpoints/checkpoint_01.pt")
     assert c1.gdrive_id == "11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv"
     assert len(c1.info) > 0
     assert isinstance(c1.exists, bool)
@@ -31,13 +31,13 @@ def test_checkpoint_data():
     found_by_int = mgr.find(1)
     found_by_str_digit = mgr.find("1")
     found_by_id = mgr.find("checkpoint_01")
-    found_by_full_path = mgr.find("checkpoints/checkpoint_01.pt")
+    found_by_full_path = mgr.find("engine/heb_tts/checkpoints/checkpoint_01.pt")
     assert found_by_int is c1
     assert found_by_str_digit is c1
     assert found_by_id is c1
     assert found_by_full_path is c1
     # Test auto-discovery of extra *.pt files in base_dir
-    dummy_pt = Path("checkpoints/dummy_extra_test.pt")
+    dummy_pt = Path("engine/heb_tts/checkpoints/dummy_extra_test.pt")
     try:
         dummy_pt.touch()
         mgr.clear()
@@ -45,7 +45,7 @@ def test_checkpoint_data():
         assert discovered is not None
         assert discovered.id == "dummy_extra_test.pt"
         assert discovered.path == "dummy_extra_test.pt"
-        assert discovered.full_path == Path("checkpoints/dummy_extra_test.pt")
+        assert discovered.full_path == Path("engine/heb_tts/checkpoints/dummy_extra_test.pt")
     finally:
         if dummy_pt.exists():
             dummy_pt.unlink()
@@ -56,7 +56,7 @@ def test_checkpoint_data():
         id="mock_remote.pt",
         path="mock_remote.pt",
         gdrive_id="mock_gdrive_123",
-        base="checkpoints",
+        base="engine/heb_tts/checkpoints",
     )
     with patch.dict("sys.modules", {"gdown": mock_gdown}):
         # Mock gdown creating the file
@@ -81,24 +81,24 @@ def test_checkpoint_data():
     cp_test = Checkpoint(id="custom", path="")
     cp_test.parse(
         {"path": "custom_model.pt", "info": "Custom model", "gdrive_id": "test_id"},
-        Path("checkpoints"),
+        Path("engine/heb_tts/checkpoints"),
         "custom",
     )
     assert cp_test.path == "custom_model.pt"
-    assert cp_test.base == "checkpoints"
+    assert cp_test.base == "engine/heb_tts/checkpoints"
     assert cp_test.info == "Custom model"
     assert cp_test.gdrive_id == "test_id"
-    assert cp_test.full_path == Path("checkpoints/custom_model.pt")
+    assert cp_test.full_path == Path("engine/heb_tts/checkpoints/custom_model.pt")
     # Test Checkpoint.parse with absolute path inside checkpoints directory
-    abs_path_test = (Path("checkpoints").resolve() / "abs_model.pt").as_posix()
+    abs_path_test = (Path("engine/heb_tts/checkpoints").resolve() / "abs_model.pt").as_posix()
     cp_abs = Checkpoint(id="abs_model", path="")
     cp_abs.parse(
         {"path": abs_path_test, "info": "Absolute model"},
-        Path("checkpoints"),
+        Path("engine/heb_tts/checkpoints"),
         "abs_model",
     )
     assert cp_abs.path == "abs_model.pt"
-    assert cp_abs.full_path == Path("checkpoints/abs_model.pt")
+    assert cp_abs.full_path == Path("engine/heb_tts/checkpoints/abs_model.pt")
     mgr.clear()
     assert mgr._list is None
     print("[PASS] CheckpointStore (load, list, find, clear) verified.")

@@ -3,5 +3,6 @@ __pycache__/
 *.part
 *.wav
 out/
-data
+/data/
+/data
 .cache/
