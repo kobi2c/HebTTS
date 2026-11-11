@@ -9,7 +9,6 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import utils
 import gradio as gr
 import numpy as np
 import soundfile as sf
@@ -26,9 +25,11 @@ from config import (
     CloneSpeaker,
     SpeakerStore,
     CheckpointStore,
+    convert_nikud_text,
+    has_nikud,
+    utils,
 )
 from engine import VoiceEngine, get_engine
-from nikud_converter import convert_nikud_text, has_nikud
 
 
 class GradioPage:

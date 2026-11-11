@@ -54,9 +54,28 @@ if isinstance(sys.modules.get("torch"), MagicMock):
 
     torch_mock.cat.side_effect = _mock_cat
     torch_mock.zeros.side_effect = lambda shape, *args, **kwargs: MagicMock(
+        ndim=len(shape) if isinstance(shape, (tuple, list)) else 1,
         shape=shape,
         squeeze=MagicMock(return_value=MagicMock(cpu=MagicMock(return_value=MagicMock(numpy=MagicMock(return_value=np.zeros(shape[-1] if isinstance(shape, (tuple, list)) else 2400, dtype=np.float32))))))
     )
+
+    def _mock_from_numpy(arr):
+        res = MagicMock()
+        res.ndim = getattr(arr, "ndim", 1)
+        res.shape = getattr(arr, "shape", (len(arr),) if hasattr(arr, "__len__") else (24000,))
+        res.numpy.return_value = arr
+        res.detach.return_value = res
+        res.cpu.return_value = res
+        res.unsqueeze.side_effect = lambda dim: MagicMock(
+            ndim=res.ndim + 1,
+            shape=(1, *res.shape),
+            numpy=MagicMock(return_value=arr),
+            t=MagicMock(return_value=res),
+        )
+        res.t.side_effect = lambda: res
+        return res
+
+    torch_mock.from_numpy.side_effect = _mock_from_numpy
 
 if isinstance(sys.modules.get("torchaudio"), MagicMock):
     ta_mock = sys.modules["torchaudio"]

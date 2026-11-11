@@ -21,7 +21,7 @@ docker run --gpus all --rm \\
     -w /app hebtts:latest python profiling/05_vram_allocation.py
 """
 
-import utils
+from config import utils
 import torch
 from GradioPage import GradioPage
 

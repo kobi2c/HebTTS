@@ -23,7 +23,7 @@ docker run --gpus all --rm \\
 import glob
 import os
 import time
-import utils
+from config import utils
 import torch
 
 

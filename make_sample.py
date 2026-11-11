@@ -9,8 +9,7 @@ import soundfile as sf
 import torch
 import torchaudio
 
-import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
-from config import CheckpointStore, CloneSpeaker, Config, Format, LocalSpeaker, SpeakerStore
+from config import CheckpointStore, CloneSpeaker, Config, Format, LocalSpeaker, SpeakerStore, utils
 from engine import VoiceEngine, get_engine
 
 __all__ = ["SampleMaker", "SampleMakerParser"]

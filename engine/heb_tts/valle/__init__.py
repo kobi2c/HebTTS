@@ -7,7 +7,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
 warnings.filterwarnings("ignore", category=FutureWarning, module=r".*weight_norm.*")
 
 try:
-    import utils  # Applies torch.load compatibility, audio IO fallbacks, and warning filters
+    from config import utils as _global_utils  # Applies torch.load compatibility, audio IO fallbacks, and warning filters
 except ImportError:
     pass
 

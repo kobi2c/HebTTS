@@ -6,9 +6,7 @@ from typing import Any, Callable, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from config import CheckpointStore, Config, NoiseFix, SeedMode, Speaker, SpeakerSample
-from nikud_converter import convert_nikud_text
-from utils import AttributeDict
+from config import AttributeDict, CheckpointStore, Config, NoiseFix, SeedMode, Speaker, SpeakerSample, convert_nikud_text
 from engine.heb_tts.valle.data import AudioTokenizer, tokenize_audio
 from engine.heb_tts.valle.data.collation import get_text_token_collater
 from engine.heb_tts.valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars

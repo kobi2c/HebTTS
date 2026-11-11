@@ -23,7 +23,7 @@ docker run --gpus all --rm \\
     -w /app hebtts:latest python profiling/02_mbd_device_check.py
 """
 
-import utils
+from config import utils
 import torch
 from engine.heb_tts.valle.data.tokenizer import AudioTokenizer
 

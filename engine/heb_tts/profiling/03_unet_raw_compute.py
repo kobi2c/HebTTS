@@ -23,7 +23,7 @@ docker run --gpus all --rm \\
 """
 
 import time
-import utils
+from config import utils
 import torch
 from engine.heb_tts.valle.data.tokenizer import AudioTokenizer
 

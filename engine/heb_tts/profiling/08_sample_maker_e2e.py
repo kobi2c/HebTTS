@@ -24,7 +24,7 @@ docker run --gpus all --rm \\
 """
 
 import time
-import utils
+from config import utils
 from make_sample import SampleMaker
 
 
