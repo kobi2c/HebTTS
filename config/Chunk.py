@@ -273,15 +273,6 @@ class Chunk:
         Synthesizes chunk speech via voice_maker, saves chunk wav & txt files,
         and records token usage and status.
         """
-        checkpoint = self.config.checkpoint
-        mbd = bool(self.config.mbd)
-
-        model, audio_tokenizer, text_collater, alef_bert_tokenizer = voice_maker.page.load_model_if_needed(
-            checkpoint, mbd
-        )
-        model.verbose = False
-        model.last_eos = None
-
         # Check for input text override (e.g. xx_yyy.input.txt)
         input_file = self.input_path(output_dir, basename)
         is_overridden = False
@@ -312,10 +303,6 @@ class Chunk:
         audio_np = voice_maker.synthesize_chunk(
             chunk_text=self.text,
             config=self.config,
-            model=model,
-            audio_tokenizer=audio_tokenizer,
-            text_collater=text_collater,
-            alef_bert_tokenizer=alef_bert_tokenizer,
             prompt_audio=prompt_audio,
             prompt_text=prompt_text,
             fade_ms=fade_ms,
@@ -325,7 +312,8 @@ class Chunk:
         self.proc_time = time.time() - t_synth_start
 
         self.audio = audio_np
-        self.sample_rate = 24000
+        sr_val = getattr(getattr(voice_maker, "engine", None), "sample_rate", 24000)
+        self.sample_rate = sr_val if isinstance(sr_val, (int, float)) else 24000
         self.duration = len(audio_np) / float(self.sample_rate)
 
         # Save individual chunk wav and txt
@@ -333,13 +321,10 @@ class Chunk:
         self.save_text(output_dir, basename)
 
         self.status = ChunkStatus.CREATED_T if is_overridden else ChunkStatus.CREATED_S
-        eos = model.last_eos
-        if eos and isinstance(eos, (tuple, list)) and len(eos) >= 2:
-            p_len, tot_len = eos[0], eos[1]
-            diff = tot_len - p_len
-            self.tokens_str = f"{p_len} -> {tot_len} (+{diff})"
-        else:
-            self.tokens_str = "-"
+
+        # Retrieve token usage from engine
+        raw_tokens = getattr(getattr(voice_maker, "engine", None), "last_tokens_str", None)
+        self.tokens_str = raw_tokens if isinstance(raw_tokens, str) else "-"
         return audio_np
 
     def format_table_row(self, total_chunks: int) -> str:

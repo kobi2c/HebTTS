@@ -29,26 +29,27 @@ from config import (
     SpeakerStore,
     CheckpointStore,
 )
-from make_sample import SampleMaker
-from valle.data import AudioTokenizer, tokenize_audio
-from valle.data.collation import get_text_token_collater
-from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
+from engine import VoiceEngine, get_engine
 from nikud_converter import convert_nikud_text, has_nikud
 
 
 class GradioPage:
-    def __init__(self, sampler: Optional[SampleMaker] = None, config: Optional[Config] = None) -> None:
-        self.sampler            : SampleMaker                     = sampler or SampleMaker()
-        self.config             : Config                          = (config or Config()).reset()
-        self.checkpoint         : Optional[str]                   = None
-        self.model              : Optional[torch.nn.Module]       = None
-        self.mbd                : Optional[MbdMode]               = None
-        self.audio_tokenizer    : Optional[AudioTokenizer]        = None
-        self.text_collater      : Optional[Any]                   = None
-        self.alef_bert_tokenizer: Optional[AlefBERTRootTokenizer] = None
-        self.device             : torch.device                    = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        self.device_name        : str                             = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-        self.demo               : Optional[gr.Blocks]             = None
+    def __init__(
+        self,
+        engine: Optional[Union[VoiceEngine, str]] = None,
+        config: Optional[Config] = None,
+    ) -> None:
+        self.engine: VoiceEngine = get_engine(engine)
+        self.config: Config = (config or Config()).reset()
+        self.demo: Optional[gr.Blocks] = None
+
+    @property
+    def device(self) -> Any:
+        return self.engine.device
+
+    @property
+    def device_name(self) -> str:
+        return self.engine.device_name
 
     def update_config_from_ui(
         self,
@@ -111,53 +112,6 @@ class GradioPage:
             int(self.config.max_chunk_size),
         ]
 
-    def load_model_if_needed(
-        self, checkpoint_path: str, mbd: Union[MbdMode, int, bool] = MbdMode.Disabled
-    ) -> Tuple[torch.nn.Module, AudioTokenizer, Any, AlefBERTRootTokenizer]:
-        """Loads and caches the VALL-E model and tokenizers."""
-        cp = CheckpointStore().find(checkpoint_path)
-        actual_path = cp.full_path if cp else checkpoint_path
-
-        if not os.path.exists(actual_path):
-            if cp and not cp.exists and cp.gdrive_id:
-                try:
-                    actual_path = cp.download()
-                except Exception as e:
-                    raise gr.Error(f"Failed to download checkpoint '{checkpoint_path}': {e}")
-            if not os.path.exists(actual_path):
-                raise gr.Error(f"Checkpoint '{checkpoint_path}' not found on disk.")
-
-        mbd_mode = MbdMode(int(mbd))
-
-        if self.model is None or self.checkpoint != checkpoint_path:
-            print(f"Loading checkpoint '{checkpoint_path}' on {self.device} ({self.device_name})...")
-            t_model_start = time.time()
-            if self.model is not None:
-                del self.model
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-            self.model, _ = self.sampler.load_model(str(actual_path), self.device)
-            self.checkpoint = checkpoint_path
-            model_dur = time.time() - t_model_start
-            print(f"Model loaded successfully in {model_dur:.2f}s.")
-
-        if self.audio_tokenizer is None or self.mbd != mbd_mode:
-            print(f"Initializing AudioTokenizer (MBD={mbd_mode.name}) on {self.device}...")
-            t_tok_start = time.time()
-            self.audio_tokenizer = AudioTokenizer(mbd=bool(mbd_mode), device=self.device)
-            self.mbd = mbd_mode
-            tok_dur = time.time() - t_tok_start
-            print(f"AudioTokenizer (MBD={mbd_mode.name}) initialized in {tok_dur:.2f}s.")
-
-        if self.text_collater is None:
-            self.text_collater = get_text_token_collater(self.sampler.tokens_file)
-
-        if self.alef_bert_tokenizer is None:
-            self.alef_bert_tokenizer = AlefBERTRootTokenizer(vocab_file=self.sampler.vocab_file)
-
-        return self.model, self.audio_tokenizer, self.text_collater, self.alef_bert_tokenizer
-
     def export_settings(self, *args: Any) -> str:
         if len(args) == 1 and isinstance(args[0], Config):
             self.config = args[0]
@@ -192,81 +146,41 @@ class GradioPage:
         if not cfg.text or not cfg.text.strip():
             raise gr.Error("Please provide Hebrew text to synthesize.")
 
-        mbd_mode = MbdMode(int(cfg.mbd))
-        random_mode = RandomMode(int(cfg.randomize_seed))
-        nikud_mode = NikudMode(int(cfg.nikud_converter))
-
-        # 1. Resolve speaker prompt audio and text
         spk = cfg.speaker
         if not spk:
             raise gr.Error("Speaker not configured.")
-        try:
-            sample = spk.sample()
-        except ValueError as e:
-            raise gr.Error(str(e))
 
-        # 2. Seed handling
+        # Seed handling
+        random_mode = RandomMode(int(cfg.randomize_seed))
         if random_mode == RandomMode.Enabled:
             seed = int(torch.randint(0, 2**32 - 1, (1,)).item())
+            cfg.seed_number = seed
         else:
             seed = int(cfg.seed_number)
-        torch.manual_seed(seed)
 
-        # 3. Load model and tokenizers
-        model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.load_model_if_needed(cfg.checkpoint, mbd_mode)
+        def report_progress(idx: int, tot: int, desc: str) -> None:
+            progress((idx, tot), desc=desc)
 
-        # 4. Tokenize reference audio prompt
         try:
-            encoded_frames = tokenize_audio(audio_tokenizer, sample.path)
-            audio_prompts = torch.concat([encoded_frames[0][0]], dim=-1).transpose(2, 1).to(self.device)
-        except Exception as e:
-            raise gr.Error(f"Failed to process reference audio: {str(e)}")
-
-        # 5. Split input text into lines
-        lines = [line.strip() for line in cfg.text.splitlines() if line.strip()]
-        if not lines:
-            raise gr.Error("No valid text lines found.")
-
-        silence = torch.zeros((1, int(24000 * float(cfg.pause_duration))))
-        segments: List[torch.Tensor] = []
-
-        for i, line in enumerate(lines):
-            progress((i, len(lines)), desc=f"Synthesizing line {i + 1}/{len(lines)}...")
-            seg = self.sampler.synthesize_line(
-                text=line,
-                model=model,
-                text_collater=text_collater,
-                audio_tokenizer=audio_tokenizer,
-                alef_bert_tokenizer=alef_bert_tokenizer,
-                audio_prompts=audio_prompts,
-                prompt_text=sample.text,
-                device=self.device,
-                top_k=int(cfg.top_k),
-                temperature=float(cfg.temperature),
-                mbd=bool(mbd_mode),
-                nikud_converter=bool(nikud_mode),
+            audio_np = self.engine.create(
+                speaker=spk,
+                text=cfg.text,
+                config=cfg,
+                progress_callback=report_progress,
             )
-            if seg.shape[-1] > 0:
-                segments.append(seg)
-                if i < len(lines) - 1 and cfg.pause_duration > 0:
-                    segments.append(silence)
+        except Exception as e:
+            raise gr.Error(f"Speech synthesis failed: {str(e)}")
 
-        if not segments:
+        if len(audio_np) == 0:
             raise gr.Error("Failed to generate audio (empty tokens or invalid characters).")
-
-        full_audio = torch.cat(segments, dim=-1)
-        audio_np = full_audio.squeeze().cpu().numpy()
-
-        max_val = np.abs(audio_np).max()
-        if max_val > 1.0:
-            audio_np = audio_np / max_val
 
         # Converted Ktiv-Male text if disambiguation was applied
         ktiv_male_text = ""
+        nikud_mode = NikudMode(int(cfg.nikud_converter))
         if nikud_mode == NikudMode.Enabled and has_nikud(cfg.text):
             ktiv_male_text = convert_nikud_text(cfg.text)
 
-        return (24000, audio_np), seed, ktiv_male_text
+        return (self.engine.sample_rate, audio_np), seed, ktiv_male_text
 
     def build_interface(self) -> gr.Blocks:
         checkpoints = [c.path for c in CheckpointStore().list()]

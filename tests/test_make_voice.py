@@ -173,7 +173,7 @@ def test_voice_maker_range_only_run():
             return np.ones(24000, dtype=np.float32) * 0.1  # 1 second of audio at 24kHz
 
         vm.synthesize_chunk = mock_synth
-        vm.page.load_model_if_needed = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
+        vm.engine.load_model = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
 
         # Run with --range "2" --range-only
         vm.run(["-i", str(mki_file), "--range", "2", "--range-only", "-o", str(out_dir)])
@@ -233,7 +233,7 @@ def test_voice_maker_format_options_run():
             return np.ones(24000, dtype=np.float32) * 0.1
 
         vm.synthesize_chunk = mock_synth
-        vm.page.load_model_if_needed = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
+        vm.engine.load_model = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
 
         # 1. Test --format both
         vm.run(["-i", str(mki_file), "--format", "both", "-o", str(out_dir)])
@@ -281,13 +281,13 @@ def test_voice_maker_table_progress_output():
         mock_model = MagicMock()
         mock_model.last_eos = (195, 425)
 
-        def mock_synth(chunk_text, model=None, **kwargs):
-            if model is not None:
-                model.last_eos = (195, 425)
+        def mock_synth(chunk_text, **kwargs):
+            vm.engine._last_tokens_str = "195 -> 425 (+230)"
             return np.ones(24000, dtype=np.float32) * 0.1
 
         vm.synthesize_chunk = mock_synth
-        vm.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+        mock_model.verbose = False
+        vm.engine.load_model = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
 
         buf = io.StringIO()
         with redirect_stdout(buf):
@@ -348,7 +348,7 @@ def test_voice_maker_chain_speaker_execution():
             return np.ones(24000, dtype=np.float32) * 0.1
 
         vm.synthesize_chunk = mock_synth
-        vm.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+        vm.engine.load_model = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
 
         # 1. Run with default settings (default chain_speaker=ChainMode.Disabled)
         vm.run(["-i", str(mki_file), "-o", str(out_dir)])
@@ -364,7 +364,7 @@ def test_voice_maker_chain_speaker_execution():
 
         vm_chain = VoiceMaker(chain_speaker=ChainMode.Enabled)
         vm_chain.synthesize_chunk = mock_synth
-        vm_chain.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+        vm_chain.engine.load_model = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
         vm_chain.run(["-i", str(mki_file), "-o", str(out_dir)])
         assert len(recorded_prompts) == 2
         # Chunk 1: base speaker fallback (prompt_audio is None)
@@ -382,7 +382,7 @@ def test_voice_maker_chain_speaker_execution():
         mki_enabled.write_text("@{\"chain_speaker\": 1}\nשורה ראשונה\nשורה שנייה\n", encoding="utf-8")
         vm_default = VoiceMaker()
         vm_default.synthesize_chunk = mock_synth
-        vm_default.page.load_model_if_needed = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+        vm_default.engine.load_model = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
         vm_default.run(["-i", str(mki_enabled), "-o", str(out_dir)])
         assert len(recorded_prompts) == 2
         assert recorded_prompts[0][0] is None
@@ -413,7 +413,7 @@ def test_voice_maker_max_chunk_size():
         # 1. Inherits max_chunk_size=40 from base_config JSON
         vm = VoiceMaker()
         vm.synthesize_chunk = mock_synth
-        vm.page.load_model_if_needed = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
+        vm.engine.load_model = MagicMock(return_value=(MagicMock(), MagicMock(), MagicMock(), MagicMock()))
         vm.run(["-i", str(mki_file), "-c", str(cfg_file), "-o", str(out_dir)])
         assert len(synthesized_chunks) > 1
         for c in synthesized_chunks:

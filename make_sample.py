@@ -4,19 +4,16 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
+import numpy as np
+import soundfile as sf
 import torch
 import torchaudio
 
-from valle.data import AudioTokenizer, tokenize_audio
-from valle.data.collation import get_text_token_collater
-from valle.models import get_model
-from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
-from utils import AttributeDict
-from nikud_converter import convert_nikud_text
-from config import SpeakerStore, CheckpointStore, Format
+import utils  # Sets up soundfile audio IO fallback and suppresses torchvision warning
+from config import CheckpointStore, CloneSpeaker, Config, Format, LocalSpeaker, SpeakerStore
+from engine import VoiceEngine, get_engine
 
-__all__ = ["SampleMaker", "SampleMakerParser", "SampleMake", "Sampler", "SamplerParser"]
+__all__ = ["SampleMaker", "SampleMakerParser"]
 
 
 class SampleMakerParser(argparse.ArgumentParser):
@@ -27,6 +24,12 @@ class SampleMakerParser(argparse.ArgumentParser):
             description="HebTTS Speech Generator",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
             **kwargs,
+        )
+        self.add_argument(
+            "--engine",
+            type=str,
+            default=None,
+            help="Speech synthesis engine to use (default: 'hebtts')",
         )
         self.add_argument(
             "--speaker-list",
@@ -116,11 +119,12 @@ class SampleMakerParser(argparse.ArgumentParser):
 
 
 class SampleMaker:
-    DEFAULT_TOKENS_FILE  = "tokenizer/unique_words_tokens_all.k2symbols"
-    DEFAULT_VOCAB_FILE   = "tokenizer/vocab.txt"
+    DEFAULT_TOKENS_FILE = "tokenizer/unique_words_tokens_all.k2symbols"
+    DEFAULT_VOCAB_FILE = "tokenizer/vocab.txt"
 
     def __init__(
         self,
+        engine: Optional[Union[VoiceEngine, str]] = None,
         tokens_file: str = DEFAULT_TOKENS_FILE,
         vocab_file: str = DEFAULT_VOCAB_FILE,
         speaker: str = "1",
@@ -138,6 +142,7 @@ class SampleMaker:
         speaker_list: bool = False,
         checkpoint_list: bool = False,
     ) -> None:
+        self.engine: VoiceEngine = get_engine(engine)
         self.speakers: SpeakerStore = SpeakerStore()
         self.checkpoints: CheckpointStore = CheckpointStore()
         self.tokens_file: str = tokens_file
@@ -164,9 +169,7 @@ class SampleMaker:
 
     normalize_formats = Format.normalize
 
-
-
-    def _print_table(self, title: str, items: list, fields: list):
+    def _print_table(self, title: str, items: list, fields: list) -> None:
         """Prints a formatted tabular list of items based on field definitions."""
         print(f"\n{title}")
         header_cols = [f"{'Number':<8}"] + [
@@ -179,25 +182,26 @@ class SampleMaker:
         print(sep)
         print(header)
         print(sep)
-        for idx, item in enumerate(items, start=1):
-            row_cols = [f"{idx:<8}"] + [
-                f"{str(f['value'](item)):<{f['width']}}" if f["width"] > 0 else str(f['value'](item))
+
+        for i, item in enumerate(items, 1):
+            cols = [f"{i:<8}"] + [
+                f"{str(f['value'](item)):<{f['width']}}" if f["width"] > 0 else str(f["value"](item))
                 for f in fields
             ]
-            print(" ".join(row_cols))
-        print(sep + "\n")
+            print(" ".join(cols))
+        print(f"{sep}\n")
 
-    def print_speakers(self, speakers=None):
+    def print_speakers(self, speakers=None) -> None:
         if speakers is None:
             speakers = self.speakers.list()
         fields = [
-            {"title": "ID"         ,  "width": 15, "value": lambda spk: spk.id},
-            {"title": "Audio-File" ,  "width": 15, "value": lambda spk: spk.filename},
-            {"title": "Audio-Text" ,  "width": 0,  "value": lambda spk: spk.text[:32] + "..." if len(spk.text) > 35 else spk.text},
+            {"title": "ID",         "width": 15, "value": lambda s: s.id},
+            {"title": "Audio-File", "width": 25, "value": lambda s: s.filename},
+            {"title": "Audio-Text", "width": 0,  "value": lambda s: s.text},
         ]
         self._print_table("Available speakers:", speakers, fields)
 
-    def print_checkpoints(self):
+    def print_checkpoints(self) -> None:
         checkpoints = self.checkpoints.list()
         fields = [
             {"title": "Checkpoint ID", "width": 20, "value": lambda cp: cp.id},
@@ -207,19 +211,19 @@ class SampleMaker:
         ]
         self._print_table("Available checkpoints:", checkpoints, fields)
 
-    def resolve_checkpoint(self, checkpoint_arg):
+    def resolve_checkpoint(self, checkpoint_arg: str) -> Path:
         cp = self.checkpoints.find(checkpoint_arg)
         if cp:
             if not cp.exists and cp.gdrive_id:
                 cp.download()
             return cp.full_path
         if os.path.exists(checkpoint_arg):
-            return checkpoint_arg
+            return Path(checkpoint_arg)
         print(f"Error: Predefined checkpoint '{checkpoint_arg}' not found.")
         self.print_checkpoints()
         sys.exit(1)
 
-    def resolve_speaker(self, speaker_arg, speakers=None):
+    def resolve_speaker(self, speaker_arg: str, speakers=None) -> Tuple[str, Dict[str, str]]:
         spk = self.speakers.find(speaker_arg)
         if spk:
             return spk.id, {"text-prompt": spk.text, "audio-prompt": str(spk.full_path)}
@@ -227,149 +231,6 @@ class SampleMaker:
         print(f"Error: Speaker '{speaker_arg}' not found.")
         self.print_speakers(speakers)
         sys.exit(1)
-
-    def load_model(self, checkpoint, device):
-        if not checkpoint or not os.path.exists(checkpoint):
-            print(f"Error: Checkpoint file '{checkpoint}' does not exist.")
-            print("To download the official checkpoint, run:")
-            print("  docker-run gdown 11NoOJzMLRX9q1C_Q4sX0w2b9miiDjGrv")
-            sys.exit(1)
-
-        checkpoint_data = torch.load(checkpoint, map_location=device, weights_only=False)
-        args = AttributeDict(checkpoint_data)
-        model = get_model(args)
-        missing_keys, unexpected_keys = model.load_state_dict(checkpoint_data["model"], strict=True)
-        assert not missing_keys, f"Missing model keys: {missing_keys}"
-        model.to(device)
-        model.eval()
-        return model, args.text_tokens_path
-
-    def synthesize_line(
-        self,
-        text,
-        model,
-        text_collater,
-        audio_tokenizer,
-        alef_bert_tokenizer,
-        audio_prompts,
-        prompt_text,
-        device,
-        top_k=50,
-        temperature=1.0,
-        mbd=False,
-        nikud_converter=True,
-    ):
-        if nikud_converter:
-            text = convert_nikud_text(text)
-            prompt_text = convert_nikud_text(prompt_text)
-
-        text_without_space = [replace_chars(f"{prompt_text} {text}").strip().replace(" ", "_")]
-        tokens = alef_bert_tokenizer._tokenize(text_without_space)
-        prompt_text_without_space = [replace_chars(f"{prompt_text}").strip().replace(" ", "_")]
-        prompt_tokens = alef_bert_tokenizer._tokenize(prompt_text_without_space)
-
-        # Filter out any unsupported characters/tokens not present in the vocabulary
-        tokens = [t for t in tokens if t in text_collater.token2idx]
-        prompt_tokens = [t for t in prompt_tokens if t in text_collater.token2idx]
-
-        if not tokens:
-            return torch.zeros((1, 0))
-
-        text_tokens, text_tokens_lens = text_collater([tokens])
-        _, enroll_x_lens = text_collater([prompt_tokens])
-
-        with torch.no_grad():
-            encoded_frames = model.inference(
-                text_tokens.to(device),
-                text_tokens_lens.to(device),
-                audio_prompts,
-                enroll_x_lens=enroll_x_lens,
-                top_k=top_k,
-                temperature=temperature,
-            )
-
-            if mbd:
-                # On systems with <=12GB VRAM (e.g. 8GB GPUs), keeping both VALL-E (~1.8GB)
-                # and MBD (~4.6GB) in VRAM causes Windows WDDM shared GPU memory paging over PCIe,
-                # resulting in extreme slowdowns during diffusion. Offloading VALL-E to CPU
-                # during MBD decode eliminates PCIe thrashing and dramatically speeds up synthesis.
-                is_cuda = (isinstance(device, torch.device) and device.type == "cuda") or (
-                    isinstance(device, str) and "cuda" in device
-                )
-                if is_cuda and torch.cuda.is_available():
-                    model.to("cpu")
-                    torch.cuda.empty_cache()
-
-                samples = audio_tokenizer.mbd_decode(encoded_frames.transpose(2, 1))
-
-                if is_cuda and torch.cuda.is_available():
-                    model.to(device)
-            else:
-                samples = audio_tokenizer.decode([(encoded_frames.transpose(2, 1), None)])
-
-        return samples[0].cpu()
-
-    def synthesize(
-        self,
-        lines,
-        model,
-        text_collater,
-        audio_tokenizer,
-        alef_bert_tokenizer,
-        audio_prompts,
-        prompt_text,
-        device,
-        top_k=50,
-        temperature=1.0,
-        mbd=False,
-        silence_duration_s=0.3,
-        nikud_converter=True,
-    ):
-        if isinstance(lines, str):
-            lines = [lines]
-
-        if len(lines) == 1:
-            print(f"Text:                {lines[0][:60]}{'...' if len(lines[0]) > 60 else ''}")
-            print("Generating audio...")
-            return self.synthesize_line(
-                lines[0],
-                model,
-                text_collater,
-                audio_tokenizer,
-                alef_bert_tokenizer,
-                audio_prompts,
-                prompt_text,
-                device,
-                top_k=top_k,
-                temperature=temperature,
-                mbd=mbd,
-                nikud_converter=nikud_converter,
-            )
-
-        print(f"Found {len(lines)} lines in input. Generating audio...")
-        silence = torch.zeros((1, int(24000 * silence_duration_s)))
-        segments = []
-        for i, line in enumerate(lines, start=1):
-            print(f"[{i}/{len(lines)}] {line[:55]}{'...' if len(line) > 55 else ''}")
-            seg = self.synthesize_line(
-                line,
-                model,
-                text_collater,
-                audio_tokenizer,
-                alef_bert_tokenizer,
-                audio_prompts,
-                prompt_text,
-                device,
-                top_k=top_k,
-                temperature=temperature,
-                mbd=mbd,
-                nikud_converter=nikud_converter,
-            )
-            if seg.shape[-1] > 0:
-                segments.append(seg)
-                if i < len(lines):
-                    segments.append(silence)
-        return torch.cat(segments, dim=-1) if segments else torch.zeros((1, 0))
 
     def create_parser(self) -> SampleMakerParser:
         """Creates and returns the command line argument parser for SampleMaker."""
@@ -412,6 +273,9 @@ class SampleMaker:
         self.mbd = bool(parsed.mbd)
         self.nikud_converter = bool(parsed.nikud_converter)
 
+        if getattr(parsed, "engine", None):
+            self.engine = get_engine(parsed.engine)
+
         return parsed
 
     def run(self, args: Optional[Union[argparse.Namespace, List[str]]] = None) -> Optional[Path]:
@@ -433,15 +297,11 @@ class SampleMaker:
             return None
 
         checkpoint_path = self.resolve_checkpoint(self.checkpoint)
-        if not self.clone_wav:
-            speaker_id, speaker_data = self.resolve_speaker(self.speaker, speakers)
-        else:
-            speaker_id, speaker_data = None, None
 
         # Resolve text input
-        lines = None
+        lines: Optional[List[str]] = None
+        input_file_path: Optional[Path] = None
 
-        input_file_path = None
         if self.input_file is not None:
             input_file_path = Path(self.input_file)
             if not input_file_path.exists():
@@ -475,7 +335,7 @@ class SampleMaker:
             base_out = Path("sample")
         base_out.parent.mkdir(parents=True, exist_ok=True)
 
-        # Resolve prompt audio and text
+        # Resolve Speaker instance
         if self.clone_wav:
             prompt_audio = self.clone_wav
             if not os.path.exists(prompt_audio):
@@ -500,70 +360,57 @@ class SampleMaker:
                     print(f"Error: Clone text file not specified and '{auto_txt}' not found.")
                     print("Please specify reference text with --clone-txt <file.txt>.")
                     sys.exit(1)
+
+            spk = CloneSpeaker(filename=prompt_audio, text=prompt_text)
         else:
-            prompt_audio = speaker_data["audio-prompt"]
-            prompt_text = speaker_data["text-prompt"]
+            speaker_id, speaker_data = self.resolve_speaker(self.speaker, speakers)
+            spk = LocalSpeaker(id=speaker_id, filename=speaker_data["audio-prompt"], text=speaker_data["text-prompt"])
 
-        # Device detection
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-
-        print(f"Selected Checkpoint: {checkpoint_path}")
-        if self.clone_wav:
-            print(f"Clone Audio:         {prompt_audio}")
-            print(f"Clone Text:          {prompt_text[:60]}{'...' if len(prompt_text) > 60 else ''}")
-        else:
-            print(f"Selected Speaker:    {speaker_id}")
-        print(f"Device:              {device} ({device_name})")
-        if self.input_file:
-            print(f"Input File:          {self.input_file}")
-        print("Loading model...")
-
-        model, _ = self.load_model(checkpoint_path, device)
-        text_collater = get_text_token_collater(self.tokens_file)
-        audio_tokenizer = AudioTokenizer(mbd=self.mbd, device=device)
-        alef_bert_tokenizer = AlefBERTRootTokenizer(vocab_file=self.vocab_file)
-
-        # Encode prompt audio
-        encoded_frames = tokenize_audio(audio_tokenizer, prompt_audio)
-        audio_prompts = torch.concat([encoded_frames[0][0]], dim=-1).transpose(2, 1).to(device)
-
-        # Generate speech
-        samples = self.synthesize(
-            lines=lines,
-            model=model,
-            text_collater=text_collater,
-            audio_tokenizer=audio_tokenizer,
-            alef_bert_tokenizer=alef_bert_tokenizer,
-            audio_prompts=audio_prompts,
-            prompt_text=prompt_text,
-            device=device,
+        cfg = Config(
+            checkpoint=str(checkpoint_path),
+            speaker=spk,
             top_k=self.top_k,
             temperature=self.temperature,
             mbd=self.mbd,
             nikud_converter=self.nikud_converter,
+            pause_duration=0.3,
         )
+
+        print(f"Selected Checkpoint: {checkpoint_path}")
+        if self.clone_wav:
+            print(f"Clone Audio:         {spk.filename}")
+            print(f"Clone Text:          {spk.text[:60]}{'...' if len(spk.text) > 60 else ''}")
+        else:
+            print(f"Selected Speaker:    {spk.id}")
+        print(f"Device:              {self.engine.device} ({self.engine.device_name})")
+        if self.input_file:
+            print(f"Input File:          {self.input_file}")
+        print("Loading model...")
+
+        audio_np = self.engine.create(
+            speaker=spk,
+            text="\n".join(lines),
+            config=cfg,
+        )
+
+        sr = getattr(self.engine, "sample_rate", 24000)
+        audio_tensor = torch.from_numpy(audio_np).unsqueeze(0) if isinstance(audio_np, np.ndarray) else audio_np
 
         saved_path: Optional[Path] = None
         if Format.WAV in self.format:
             wav_path = base_out.with_suffix(".wav")
-            torchaudio.save(str(wav_path), samples, 24000)
+            torchaudio.save(str(wav_path), audio_tensor, sr)
             print(f"Saved generated audio (WAV) to: {wav_path}")
             saved_path = wav_path
 
         if Format.MP3 in self.format:
             mp3_path = base_out.with_suffix(".mp3")
-            torchaudio.save(str(mp3_path), samples, 24000)
+            torchaudio.save(str(mp3_path), audio_tensor, sr)
             print(f"Saved generated audio (MP3) to: {mp3_path}")
             if saved_path is None or (self.output and str(self.output).lower().endswith(".mp3")):
                 saved_path = mp3_path
 
         return saved_path
-
-
-SampleMake = SampleMaker
-Sampler = SampleMaker
-SamplerParser = SampleMakerParser
 
 
 if __name__ == "__main__":

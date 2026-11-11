@@ -32,11 +32,7 @@ from config import (
     split_text,
     format_srt_time,
 )
-from GradioPage import GradioPage
-from make_sample import SampleMaker
-from valle.data import AudioTokenizer, tokenize_audio
-from valle.data.collation import get_text_token_collater
-from valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
+from engine import VoiceEngine, HebTTSEngine, get_engine
 from nikud_converter import convert_nikud_text, has_nikud
 
 
@@ -47,6 +43,12 @@ class VoiceMakerParser(argparse.ArgumentParser):
         super().__init__(
             description="HebTTS Batch Voice Generator: Synthesize speech and subtitles from .mki script files",
             **kwargs,
+        )
+        self.add_argument(
+            "--engine",
+            type=str,
+            default=None,
+            help="Speech synthesis engine to use (default: 'hebtts')",
         )
         self.add_argument(
             "-i", "--input",
@@ -127,8 +129,7 @@ class VoiceMaker:
     """
     def __init__(
         self,
-        page: Optional[GradioPage] = None,
-        sampler: Optional[SampleMaker] = None,
+        engine: Optional[Union[VoiceEngine, str]] = None,
         input: Optional[Union[str, Path]] = None,
         base_config: Optional[str] = None,
         output_dir: Optional[Union[str, Path]] = None,
@@ -142,8 +143,7 @@ class VoiceMaker:
         format: Optional[List[Format]] = None,
         chain_speaker: Optional[ChainMode] = None,
     ) -> None:
-        self.page: GradioPage = page or GradioPage()
-        self.sampler: SampleMaker = sampler or self.page.sampler
+        self.engine: VoiceEngine = get_engine(engine)
         self.input: Optional[Union[str, Path]] = input
         self.base_config: Optional[str] = base_config
         self.output_dir: Optional[Union[str, Path]] = output_dir
@@ -203,6 +203,9 @@ class VoiceMaker:
 
         # Handle format: List[Format]
         self.format = Format.normalize(parsed.format)
+
+        if hasattr(parsed, "engine") and parsed.engine:
+            self.engine = get_engine(parsed.engine)
 
         return parsed
 
@@ -286,65 +289,31 @@ class VoiceMaker:
         self,
         chunk_text: str,
         config: Config,
-        model: torch.nn.Module,
-        audio_tokenizer: AudioTokenizer,
-        text_collater: Any,
-        alef_bert_tokenizer: AlefBERTRootTokenizer,
+        model: Optional[Any] = None,
+        audio_tokenizer: Optional[Any] = None,
+        text_collater: Optional[Any] = None,
+        alef_bert_tokenizer: Optional[Any] = None,
+        prompt_sample: Optional[SpeakerSample] = None,
         prompt_audio: Optional[str] = None,
         prompt_text: Optional[str] = None,
         fade_ms: float = 20.0,
         trim_noise: bool = True,
         pad_ms: float = 30.0,
+        **kwargs: Any,
     ) -> np.ndarray:
-        """Synthesizes a single chunk using cached model and prompt representations."""
-        if prompt_audio is None or prompt_text is None:
-            sample = self.resolve_speaker_prompt(config)
-            if prompt_audio is None:
-                prompt_audio = sample.path
-            if prompt_text is None:
-                prompt_text = sample.text
-
-        # Update cached prompt representations if speaker or audio changed
-        if self._cached_prompt_audio != prompt_audio or self._cached_audio_prompts is None:
-            encoded_frames = tokenize_audio(audio_tokenizer, prompt_audio)
-            self._cached_audio_prompts = torch.concat([encoded_frames[0][0]], dim=-1).transpose(2, 1).to(self.page.device)
-            self._cached_prompt_audio = prompt_audio
-            self._cached_prompt_text = prompt_text
-        # Randomize seed if enabled
-        if config.randomize_seed == RandomMode.Enabled:
-            seed = random.randint(0, 2**31 - 1)
-        else:
-            seed = int(config.seed_number)
-        torch.manual_seed(seed)
-        top_k = int(config.top_k)
-        temperature = float(config.temperature)
-        mbd = bool(config.mbd)
-        nikud_converter = bool(config.nikud_converter)
-        seg = self.sampler.synthesize_line(
+        """Synthesizes a single chunk using the configured VoiceEngine."""
+        if prompt_sample is None and (prompt_audio is not None or prompt_text is not None):
+            prompt_sample = SpeakerSample(path=prompt_audio or "", text=prompt_text or "")
+        return self.engine.create(
+            speaker=config.speaker,
             text=chunk_text,
-            model=model,
-            text_collater=text_collater,
-            audio_tokenizer=audio_tokenizer,
-            alef_bert_tokenizer=alef_bert_tokenizer,
-            audio_prompts=self._cached_audio_prompts,
-            prompt_text=self._cached_prompt_text or prompt_text,
-            device=self.page.device,
-            top_k=top_k,
-            temperature=temperature,
-            mbd=mbd,
-            nikud_converter=nikud_converter,
+            config=config,
+            prompt_sample=prompt_sample,
+            fade_ms=fade_ms,
+            trim_noise=trim_noise,
+            pad_ms=pad_ms,
+            **kwargs,
         )
-        audio_np = seg.squeeze().cpu().numpy()
-        max_val = np.abs(audio_np).max()
-        if max_val > 1.0:
-            audio_np = audio_np / max_val
-        # Trim leading vocoder startup noise and clicks before speech onset
-        if trim_noise:
-            audio_np = NoiseFix.trim(audio_np, sr=24000, pad_ms=pad_ms)
-        # Apply smooth micro fade-in and fade-out to suppress vocoder boundary clicks/transients
-        if fade_ms > 0:
-            audio_np = NoiseFix.fade(audio_np, sr=24000, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
-        return audio_np
     def run(self, args: Optional[Union[argparse.Namespace, List[str]]] = None) -> Path:
         """Main execution workflow for processing .mki files."""
         if args is not None or self.input is None:
@@ -359,7 +328,7 @@ class VoiceMaker:
         print(f"\n{'='*70}")
         print(f"🎙️  HebTTS Batch Voice Generator: {input_path.name}")
         print(f"Output Directory: {output_dir}")
-        print(f"Device:           {self.page.device} ({self.page.device_name})")
+        print(f"Device:           {self.engine.device} ({self.engine.device_name})")
         print(f"{'='*70}\n")
 
         # 1. Load base configuration and read lines
@@ -394,7 +363,7 @@ class VoiceMaker:
             target_indices, _ = chunks.filter_targets(active_range, self.range_only)
             target_chunk = next((c for c in chunks if c.index in target_indices), None)
             if target_chunk:
-                self.page.load_model_if_needed(target_chunk.config.checkpoint, target_chunk.config.mbd)
+                self.engine.load_model(target_chunk.config.checkpoint, mbd=target_chunk.config.mbd)
 
         # 4. Process or generate audio chunk by chunk
         chunks.process(
@@ -413,7 +382,7 @@ class VoiceMaker:
         # 5. Save merged audio and subtitles
         merged_wav, total_sec = chunks.join_audio()
         if merged_wav is not None:
-            chunks.save_merged(output_dir, basename, self.format, merged_wav, sample_rate=24000)
+            chunks.save_merged(output_dir, basename, self.format, merged_wav, sample_rate=getattr(self.engine, 'sample_rate', 24000))
             chunks.save_srt(output_dir, basename)
 
         print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")

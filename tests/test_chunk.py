@@ -334,9 +334,8 @@ def test_chunk_input_override():
         assert not inp_path.exists()
 
         mock_vm = MagicMock()
-        mock_model = MagicMock()
-        mock_model.last_eos = (100, 200)
-        mock_vm.page.load_model_if_needed.return_value = (mock_model, MagicMock(), MagicMock(), MagicMock())
+        mock_vm.engine.last_tokens_str = "100 -> 200 (+100)"
+        mock_vm.engine.sample_rate = 24000
         mock_vm.synthesize_chunk.return_value = np.ones(24000, dtype=np.float32) * 0.1
 
         # 2. Normal synthesize without .input.txt -> CREATED_S

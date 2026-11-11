@@ -5,7 +5,6 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import torch
 # Ensure project root is in sys.path
 root_dir = Path(__file__).resolve().parent.parent
 if str(root_dir) not in sys.path:
@@ -13,17 +12,15 @@ if str(root_dir) not in sys.path:
 
 import tests.setup_env  # noqa: F401
 
+import numpy as np
+import torch
+
 
 from config import Format
-from make_sample import SampleMaker, SampleMakerParser, SampleMake, Sampler, SamplerParser
+from make_sample import SampleMaker, SampleMakerParser
 
 
 def test_sampler_args():
-    # 0. Aliases verified
-    assert SampleMake is SampleMaker
-    assert Sampler is SampleMaker
-    assert SamplerParser is SampleMakerParser
-
     # 1. Default constructor fields
     s = SampleMaker()
     assert s.tokens_file == SampleMaker.DEFAULT_TOKENS_FILE
@@ -136,26 +133,40 @@ def test_sampler_run_execution():
         out_mp3 = tmp_path / "test_out.mp3"
 
         s = SampleMaker(speaker="1", text="שלום עולם", output=out_wav)
-        s.load_model = MagicMock(return_value=(MagicMock(), "mock_tokens"))
-        s.synthesize = MagicMock(return_value=torch.zeros((1, 24000)))
+        s.engine.create = MagicMock(return_value=np.zeros(24000, dtype=np.float32))
 
-        with patch("make_sample.tokenize_audio", return_value=[[torch.zeros((1, 8, 10))]]), \
-             patch("make_sample.AudioTokenizer"):
-            # 1. Run with instance fields (WAV output)
-            result = s.run()
-            assert result == out_wav
-            assert out_wav.exists()
+        # 1. Run with instance fields (WAV output)
+        result = s.run()
+        assert result == out_wav
+        assert out_wav.exists()
+        assert s.engine.create.called
 
-            # 2. Run with MP3 format via parse_args in run()
-            result_mp3 = s.run(["--text", "שלום שוב", "--format", "mp3", "--output", str(out_mp3)])
-            assert result_mp3 == out_mp3
-            assert out_mp3.exists()
+        # 2. Run with MP3 format via parse_args in run()
+        result_mp3 = s.run(["--text", "שלום שוב", "--format", "mp3", "--output", str(out_mp3)])
+        assert result_mp3 == out_mp3
+        assert out_mp3.exists()
 
-            # 3. Run with both formats via --format both
-            both_base = tmp_path / "both_out"
-            s.run(["--text", "שניהם", "--format", "both", "--output", str(both_base)])
-            assert (tmp_path / "both_out.wav").exists()
-            assert (tmp_path / "both_out.mp3").exists()
+        # 3. Run with both formats via --format both
+        both_base = tmp_path / "both_out"
+        s.run(["--text", "שניהם", "--format", "both", "--output", str(both_base)])
+        assert (tmp_path / "both_out.wav").exists()
+        assert (tmp_path / "both_out.mp3").exists()
+
+        # 4. Run with custom pluggable engine
+        from engine import VoiceEngine
+        class MockCustomEngine(VoiceEngine):
+            def create(self, *args, **kwargs):
+                return np.zeros(16000, dtype=np.float32)
+            @property
+            def sample_rate(self):
+                return 16000
+
+        custom_eng = MockCustomEngine()
+        s_custom = SampleMaker(engine=custom_eng, speaker="1", text="בדיקת מנוע", output=tmp_path / "cust.wav")
+        assert s_custom.engine is custom_eng
+        cust_res = s_custom.run()
+        assert cust_res == tmp_path / "cust.wav"
+        assert (tmp_path / "cust.wav").exists()
 
     print("[PASS] SampleMaker.run() execution without args dependency verified.")
 

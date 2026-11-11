@@ -37,6 +37,12 @@ from tests.test_make_sample import (
     test_sampler_list_commands,
     test_sampler_run_execution,
 )
+from tests.test_engine import (
+    test_voice_engine_abc,
+    test_get_engine_factory,
+    test_heb_tts_engine_create,
+    test_voice_maker_with_custom_engine,
+)
 
 ALL_TESTS = [
     ("Enums", test_enums),
@@ -59,6 +65,10 @@ ALL_TESTS = [
     ("Strict Config Enforcement", test_generate_audio_strict_config),
     ("GradioPage Config Helpers", test_gradio_page_config_helpers),
     ("Table Printing", test_table_printing),
+    ("VoiceEngine ABC Contract", test_voice_engine_abc),
+    ("VoiceEngine Factory & Registration", test_get_engine_factory),
+    ("HebTTSEngine Create & Token Stats", test_heb_tts_engine_create),
+    ("VoiceMaker Pluggable Engine Synthesis", test_voice_maker_with_custom_engine),
 ]
 
 

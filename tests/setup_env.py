@@ -33,6 +33,26 @@ for mod in [
         except ImportError:
             sys.modules[mod] = MagicMock()
 
+if isinstance(sys.modules.get("torch"), MagicMock):
+    import numpy as np
+    torch_mock = sys.modules["torch"]
+
+    def _mock_cat(tensors, dim=-1):
+        res = MagicMock()
+        total_len = sum(
+            t.shape[-1] if hasattr(t, "shape") and isinstance(t.shape, (list, tuple)) else 2400
+            for t in tensors
+        )
+        res.shape = (1, total_len)
+        res.squeeze.return_value.cpu.return_value.numpy.return_value = np.ones(total_len, dtype=np.float32) * 0.5
+        return res
+
+    torch_mock.cat.side_effect = _mock_cat
+    torch_mock.zeros.side_effect = lambda shape, *args, **kwargs: MagicMock(
+        shape=shape,
+        squeeze=MagicMock(return_value=MagicMock(cpu=MagicMock(return_value=MagicMock(numpy=MagicMock(return_value=np.zeros(shape[-1] if isinstance(shape, (tuple, list)) else 2400, dtype=np.float32))))))
+    )
+
 if isinstance(sys.modules.get("torchaudio"), MagicMock):
     ta_mock = sys.modules["torchaudio"]
     ta_mock.save.side_effect = lambda filepath, *args, **kwargs: Path(filepath).touch()
