@@ -4,18 +4,18 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-if [ "$1" = "v1" ]; then
+if [ "$1" = "main" ] || [ "$1" = "unified" ] || [ "$1" = "v1" ]; then
     shift
     echo "Building Unified image (make-voice:v1)..."
-    docker build -f "${ROOT_DIR}/Dockerfile" -t make-voice:v1 "${ROOT_DIR}" "$@"
+    docker build -f "${ROOT_DIR}/Dockerfile" -t make-voice:v1 "$@" "${ROOT_DIR}"
 elif [ "$1" = "hebtts" ]; then
     shift
     echo "Building HebTTS image (make-voice:hebtts)..."
-    docker build -f "${SCRIPT_DIR}/hebtts/Dockerfile" -t make-voice:hebtts "${ROOT_DIR}" "$@"
+    docker build -f "${SCRIPT_DIR}/hebtts/Dockerfile" -t make-voice:hebtts "$@" "${ROOT_DIR}"
 elif [ "$1" = "zonos" ]; then
     shift
     echo "Building Zonos image (make-voice:zonos)..."
-    docker build -f "${SCRIPT_DIR}/zonos/Dockerfile" -t make-voice:zonos "${ROOT_DIR}" "$@"
+    docker build -f "${SCRIPT_DIR}/zonos/Dockerfile" -t make-voice:zonos "$@" "${ROOT_DIR}"
 else
     echo "Building images via docker compose..."
     docker compose -f "${ROOT_DIR}/docker-compose.yml" build "$@"

@@ -43,10 +43,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # Copy dependency specifications first to leverage Docker layer caching
-COPY pyproject.toml .python-version ./
+COPY pyproject.toml uv.lock .python-version ./
 
 # Install python and project dependencies into virtual environment via uv
-RUN uv sync --no-install-project && uv cache clean
+RUN uv sync --frozen --no-install-project && uv cache clean
 
 # Build and install CUDA acceleration extensions for Zonos hybrid backbone
 RUN pip install --no-cache-dir --no-build-isolation \

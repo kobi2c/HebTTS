@@ -35,10 +35,11 @@ WORKDIR /app
 
 # Copy dependency specifications first to leverage Docker layer caching
 COPY docker/hebtts/pyproject.toml ./pyproject.toml
-COPY .python-version ./
+COPY docker/hebtts/uv.lock ./uv.lock
+COPY docker/hebtts/.python-version ./
 
 # Install python and project dependencies into virtual environment
-RUN uv sync --no-install-project && uv cache clean
+RUN uv sync --frozen --no-install-project && uv cache clean
 
 # Copy project files
 COPY . ./

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -e
+
+# Disable MSYS/Git-Bash automatic path conversion on Windows
+export MSYS_NO_PATHCONV=1
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/pyproject.toml" ]; then
+    ROOT_DIR="${SCRIPT_DIR}"
+else
+    ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
+
+UV_IMAGE="${UV_IMAGE:-ghcr.io/astral-sh/uv:debian}"
+
+lock_main() {
+    echo "=================================================="
+    echo "Updating lockfile for Main (root /app)..."
+    echo "=================================================="
+    docker run --rm --entrypoint uv \
+        -v "${ROOT_DIR}:/app" \
+        -w /app \
+        "${UV_IMAGE}" lock "$@"
+}
+
+lock_hebtts() {
+    echo "=================================================="
+    echo "Updating lockfile for HebTTS (docker/hebtts)..."
+    echo "=================================================="
+    docker run --rm --entrypoint uv \
+        -v "${ROOT_DIR}:/app" \
+        -w /app/docker/hebtts \
+        "${UV_IMAGE}" lock "$@"
+}
+
+lock_zonos() {
+    echo "=================================================="
+    echo "Updating lockfile for Zonos (docker/zonos)..."
+    echo "=================================================="
+    docker run --rm --entrypoint uv \
+        -v "${ROOT_DIR}:/app" \
+        -w /app/docker/zonos \
+        "${UV_IMAGE}" lock "$@"
+}
+
+TARGET="$1"
+
+if [ "$TARGET" = "main" ] || [ "$TARGET" = "unified" ] || [ "$TARGET" = "v1" ]; then
+    shift
+    lock_main "$@"
+elif [ "$TARGET" = "hebtts" ]; then
+    shift
+    lock_hebtts "$@"
+elif [ "$TARGET" = "zonos" ]; then
+    shift
+    lock_zonos "$@"
+elif [ "$TARGET" = "all" ]; then
+    shift
+    lock_main "$@"
+    lock_hebtts "$@"
+    lock_zonos "$@"
+else
+    # Default: update all builds with any extra flags passed
+    lock_main "$@"
+    lock_hebtts "$@"
+    lock_zonos "$@"
+fi
+
+echo ""
+echo "Lockfiles updated successfully!"
+
