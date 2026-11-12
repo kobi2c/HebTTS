@@ -33,16 +33,6 @@ lock_hebtts() {
         "${UV_IMAGE}" lock "$@"
 }
 
-lock_zonos() {
-    echo "=================================================="
-    echo "Updating lockfile for Zonos (docker/zonos)..."
-    echo "=================================================="
-    docker run --rm --entrypoint uv \
-        -v "${ROOT_DIR}:/app" \
-        -w /app/docker/zonos \
-        "${UV_IMAGE}" lock "$@"
-}
-
 TARGET="$1"
 
 if [ "$TARGET" = "main" ] || [ "$TARGET" = "unified" ] || [ "$TARGET" = "v1" ]; then
@@ -53,19 +43,17 @@ elif [ "$TARGET" = "hebtts" ]; then
     lock_hebtts "$@"
 elif [ "$TARGET" = "zonos" ]; then
     shift
-    lock_zonos "$@"
+    echo "Note: Zonos derives from HebTTS and uses docker/hebtts/uv.lock"
+    lock_hebtts "$@"
 elif [ "$TARGET" = "all" ]; then
     shift
     lock_main "$@"
     lock_hebtts "$@"
-    lock_zonos "$@"
 else
-    # Default: update all builds with any extra flags passed
+    # Default: update all lockfiles (main and hebtts) with any extra flags passed
     lock_main "$@"
     lock_hebtts "$@"
-    lock_zonos "$@"
 fi
 
 echo ""
 echo "Lockfiles updated successfully!"
-

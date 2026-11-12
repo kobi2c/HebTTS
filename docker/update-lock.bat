@@ -39,7 +39,8 @@ if /i "%TARGET%"=="hebtts" (
 
 if /i "%TARGET%"=="zonos" (
   call :parse_args %*
-  call :lock_zonos
+  echo Note: Zonos derives from HebTTS and uses docker/hebtts/uv.lock
+  call :lock_hebtts
   exit /b %ERRORLEVEL%
 )
 
@@ -53,9 +54,6 @@ call :lock_main
 if errorlevel 1 exit /b %ERRORLEVEL%
 
 call :lock_hebtts
-if errorlevel 1 exit /b %ERRORLEVEL%
-
-call :lock_zonos
 if errorlevel 1 exit /b %ERRORLEVEL%
 
 echo.
@@ -81,13 +79,6 @@ exit /b 0
   docker run --rm --entrypoint uv -v "%ROOT_DIR%:/app" -w /app/docker/hebtts %UV_IMAGE% lock %EXTRA_ARGS%
   exit /b %ERRORLEVEL%
 
-:lock_zonos
-  echo ==================================================
-  echo Updating lockfile for Zonos [docker/zonos]...
-  echo ==================================================
-  docker run --rm --entrypoint uv -v "%ROOT_DIR%:/app" -w /app/docker/zonos %UV_IMAGE% lock %EXTRA_ARGS%
-  exit /b %ERRORLEVEL%
-
 :parse_args
   shift
   set "EXTRA_ARGS="
@@ -96,4 +87,3 @@ exit /b 0
   set "EXTRA_ARGS=%EXTRA_ARGS% %1"
   shift
   goto args_loop
-
