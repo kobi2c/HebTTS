@@ -1,5 +1,6 @@
 import argparse
 import base64
+import inspect
 import json
 import os
 import sys
@@ -41,6 +42,7 @@ class GradioPage:
         self.config: Config = (config or Config()).reset()
         self.nikud_maker: NikudMaker = NikudMaker()
         self.demo: Optional[gr.Blocks] = None
+        self.theme: Optional[Any] = None
 
     @property
     def device(self) -> Any:
@@ -192,12 +194,16 @@ class GradioPage:
             self.config.speaker.id if self.config.speaker else default_speaker
         )
 
-        theme = gr.themes.Soft(
+        self.theme = gr.themes.Soft(
             primary_hue="blue",
             secondary_hue="slate",
         )
 
-        with gr.Blocks(theme=theme, title="HebTTS - Hebrew Speech Synthesizer") as demo:
+        blocks_kwargs: Dict[str, Any] = {"title": "HebTTS - Hebrew Speech Synthesizer"}
+        if "theme" in inspect.signature(gr.Blocks.__init__).parameters:
+            blocks_kwargs["theme"] = self.theme
+
+        with gr.Blocks(**blocks_kwargs) as demo:
             gr.Markdown(
                 f"""
                 # 🎙️ HebTTS - Hebrew VALL-E Speech Synthesizer
@@ -283,13 +289,20 @@ class GradioPage:
                         file_types=[".txt"],
                         height=110
                     )
+                    copy_kwargs: Dict[str, Any] = {}
+                    textbox_params = inspect.signature(gr.Textbox.__init__).parameters
+                    if "buttons" in textbox_params:
+                        copy_kwargs["buttons"] = ["copy"]
+                    elif "show_copy_button" in textbox_params:
+                        copy_kwargs["show_copy_button"] = True
+
                     ktiv_male_display = gr.Textbox(
                         label="Phonetic Ktiv-Male (Disambiguated)",
                         lines=3,
                         interactive=False,
-                        show_copy_button=True,
                         placeholder="Phonetic Ktiv-Male text will appear here if Nikud disambiguation is applied...",
                         info="Read-only view showing vocalized words converted into disambiguated phonetic Ktiv-Male.",
+                        **copy_kwargs,
                     )
 
                     generate_button = gr.Button("⚡ Generate Speech", variant="primary", size="lg")
@@ -504,10 +517,13 @@ class GradioPage:
         self.demo = demo
         return demo
 
-    def launch(self, host: str = "0.0.0.0", port: int = 7860, share: bool = False) -> Any:
+    def launch(self, host: str = "0.0.0.0", port: int = 7860, share: bool = False, **kwargs: Any) -> Any:
         if self.demo is None:
             self.build_interface()
-        return self.demo.launch(server_name=host, server_port=port, share=share)
+        launch_params = inspect.signature(self.demo.launch).parameters
+        if "theme" in launch_params and "theme" not in kwargs and getattr(self, "theme", None) is not None:
+            kwargs["theme"] = self.theme
+        return self.demo.launch(server_name=host, server_port=port, share=share, **kwargs)
 
     run = launch
 
