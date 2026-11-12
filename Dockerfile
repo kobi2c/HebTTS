@@ -20,7 +20,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     LANG=C.UTF-8
 
-# Install system dependencies (build tools + audio + speech)
+# Install system dependencies (build tools + audio + speech) in first apt-get install
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -45,17 +45,17 @@ WORKDIR /app
 # Copy dependency specifications first to leverage Docker layer caching
 COPY pyproject.toml uv.lock .python-version ./
 
-# Install python and project dependencies into virtual environment via uv
+# Install python and all project dependencies (HebTTS + Zonos) via uv sync
 RUN uv sync --frozen --no-install-project && uv cache clean
 
-# Build and install CUDA acceleration extensions for Zonos hybrid backbone
-RUN pip install --no-cache-dir --no-build-isolation \
+# Build and install CUDA acceleration extensions for Zonos hybrid backbone via uv pip
+RUN uv pip install --no-cache --no-build-isolation \
       --no-binary flash-attn 'flash-attn==2.7.4.post1' && \
-    pip install --no-cache-dir --no-build-isolation \
+    uv pip install --no-cache --no-build-isolation \
       git+https://github.com/Dao-AILab/causal-conv1d.git && \
-    pip install --no-cache-dir --no-build-isolation \
+    uv pip install --no-cache --no-build-isolation \
       git+https://github.com/state-spaces/mamba.git && \
-    pip install --no-cache-dir "apache-tvm-ffi<=0.1.9"
+    uv pip install --no-cache "apache-tvm-ffi<=0.1.9"
 
 # Copy project files
 COPY . ./
