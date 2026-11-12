@@ -1,0 +1,3 @@
+Zonos is a leading open-weight text-to-speech model 
+trained on more than 200k hours of varied multilingual speech, d
+elivering expressiveness and quality on par with—or even surpassing—top TTS providers.
