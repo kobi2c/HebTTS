@@ -19,15 +19,6 @@ if TYPE_CHECKING:
     from make_voice import VoiceMaker
 
 
-def format_srt_time(seconds: float) -> str:
-    """Formats seconds into standard SRT timestamp: HH:MM:SS,mmm"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int((seconds - int(seconds)) * 1000)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
-
 class ChunkStatus(IntEnum):
     """Lifecycle status of an individual audio chunk during batch processing."""
     PENDING   =  0
@@ -273,11 +264,20 @@ class Chunk:
         )
         return f"[{self.index:>2}/{total_chunks:<2}]    {self.status.name:<14} {duration_str:<10} {proc_str:<10} {self.tokens_str:<24} {text_preview:>38}"
 
+    @staticmethod
+    def format_srt_time(seconds: float) -> str:
+        """Formats seconds into standard SRT timestamp: HH:MM:SS,mmm"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millis = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
     def to_srt_block(self, srt_index: int) -> str:
         """Formats the chunk into an SRT subtitle cue block."""
         return (
             f"{srt_index}\n"
-            f"{format_srt_time(self.start_time)} --> {format_srt_time(self.end_time)}\n"
+            f"{self.format_srt_time(self.start_time)} --> {self.format_srt_time(self.end_time)}\n"
             f"{self.text}\n\n"
         )
 

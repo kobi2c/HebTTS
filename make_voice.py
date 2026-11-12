@@ -28,7 +28,6 @@ from config import (
     Chunk,
     ChunkList,
     ChunkStatus,
-    format_srt_time,
     utils,
 )
 from engine import VoiceEngine, HebTTSEngine, get_engine

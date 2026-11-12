@@ -11,8 +11,7 @@ from .Speaker    import ( Speaker, LocalSpeaker, CloneSpeaker, SpeakerSample, Sp
 from .Checkpoint import ( Checkpoint , CheckpointStore  )
 from .Range      import ( Range      , RangeList        )
 from .NoiseFix   import ( NoiseFix, trim_leading_noise, apply_fade )
-from .Chunk      import ( Chunk      , ChunkList       , ChunkStatus    , ChunkStats,
-                          format_srt_time                               )
+from .Chunk      import ( Chunk      , ChunkList       , ChunkStatus    , ChunkStats )
 from .utils      import ( AttributeDict                                 )
 from .NikudMaker import ( NikudMaker                                   )
 from . import utils
@@ -43,7 +42,6 @@ __all__ = [
     "ChunkList",
     "ChunkStatus",
     "ChunkStats",
-    "format_srt_time",
     "AttributeDict",
     "NikudMaker",
     "utils",

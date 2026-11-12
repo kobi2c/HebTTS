@@ -24,7 +24,6 @@ from config import (
     ChunkStats,
     Chunk,
     ChunkList,
-    format_srt_time,
 )
 from engine.base import VoiceEngine
 
@@ -81,10 +80,10 @@ def test_chunk_stats():
 
 
 def test_split_text_and_srt_formatting():
-    # 1. format_srt_time
-    assert format_srt_time(0.0) == "00:00:00,000"
-    assert format_srt_time(65.5) == "00:01:05,500"
-    assert format_srt_time(3661.123) == "01:01:01,123"
+    # 1. Chunk.format_srt_time
+    assert Chunk.format_srt_time(0.0) == "00:00:00,000"
+    assert Chunk.format_srt_time(65.5) == "00:01:05,500"
+    assert Chunk.format_srt_time(3661.123) == "01:01:01,123"
 
     # 2. VoiceEngine.split_text
     long_text = (
@@ -100,7 +99,7 @@ def test_split_text_and_srt_formatting():
     for p in parts_small:
         assert len(p) <= 60
     assert len(parts_small) > len(parts)
-    print("[PASS] VoiceEngine.split_text and format_srt_time verified.")
+    print("[PASS] VoiceEngine.split_text and Chunk.format_srt_time verified.")
 
 
 def test_chunk_paths_and_table_row():
