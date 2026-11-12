@@ -37,19 +37,17 @@ class DummyBeepEngine(VoiceEngine):
     def create(
         self,
         speaker: Speaker,
-        text: str,
-        config: Config = None,
-        prompt_sample: SpeakerSample = None,
-        fade_ms: float = 20.0,
-        trim_noise: bool = True,
-        pad_ms: float = 30.0,
+        sample: Optional[SpeakerSample] = None,
+        config: Optional[Config] = None,
+        text: Union[str, List[str]] = "",
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
         **kwargs,
     ) -> np.ndarray:
         self.calls.append({
             "speaker": speaker,
-            "text": text,
+            "sample": sample,
             "config": config,
-            "prompt_sample": prompt_sample,
+            "text": text,
         })
         # Produce 0.5s of audio at 16kHz
         num_samples = int(self._sr * 0.5)
@@ -142,7 +140,15 @@ def test_heb_tts_engine_create():
     assert isinstance(rnd_s, int) and rnd_s >= 0
 
     spk = LocalSpeaker(id="osim", filename="osim.wav", text="שלום עולם")
-    cfg = Config(speaker=spk, temperature=0.8, top_k=40, seed=777, seed_mode=SeedMode.Disabled)
+    cfg = Config(
+        speaker=spk,
+        temperature=0.8,
+        top_k=40,
+        seed=777,
+        seed_mode=SeedMode.Disabled,
+        fade_ms=0.0,
+        trim_noise=False,
+    )
 
     progress_events = []
     def on_progress(idx, total, desc):
@@ -150,11 +156,9 @@ def test_heb_tts_engine_create():
 
     audio = engine.create(
         speaker=spk,
-        text="בדיקת דיבור שורה 1\nבדיקת דיבור שורה 2",
+        sample=SpeakerSample(id="osim", path="speakers/osim.wav", text="שלום עולם"),
         config=cfg,
-        prompt_sample=SpeakerSample(id="osim", path="speakers/osim.wav", text="שלום עולם"),
-        fade_ms=0.0,
-        trim_noise=False,
+        text="בדיקת דיבור שורה 1\nבדיקת דיבור שורה 2",
         progress_callback=on_progress,
     )
 
@@ -166,7 +170,7 @@ def test_heb_tts_engine_create():
 
     # SeedMode.Enabled generates random seed in cfg.seed
     cfg_rnd = Config(speaker=spk, seed_mode=SeedMode.Enabled)
-    engine.create(speaker=spk, text="בדיקה", config=cfg_rnd)
+    engine.create(speaker=spk, sample=spk.sample(), config=cfg_rnd, text="בדיקה")
     assert isinstance(cfg_rnd.seed, int) and cfg_rnd.seed >= 0
 
     print("[PASS] HebTTSEngine create and token stats verified.")
@@ -174,15 +178,17 @@ def test_heb_tts_engine_create():
 
 def test_heb_tts_engine_synthesize_line():
     engine = HebTTSEngine()
-    engine.device = torch.device("cpu")
+    engine._device = torch.device("cpu")
 
     mock_model = MagicMock()
     mock_model.inference.return_value = torch.zeros((1, 8, 50))
     engine.model = mock_model
 
+    mock_sample = MagicMock(shape=(1, 24000))
+    mock_sample.cpu.return_value = mock_sample
     mock_audio_tok = MagicMock()
-    mock_audio_tok.decode.return_value = torch.zeros((1, 1, 24000))
-    mock_audio_tok.mbd_decode.return_value = torch.zeros((1, 1, 24000))
+    mock_audio_tok.decode.return_value = [mock_sample]
+    mock_audio_tok.mbd_decode.return_value = [mock_sample]
     mock_audio_tok.mbd = MagicMock()
     engine.audio_tokenizer = mock_audio_tok
 
@@ -225,6 +231,44 @@ def test_heb_tts_engine_synthesize_line():
     print("[PASS] HebTTSEngine synthesize_line device contracts and vocoder routing verified.")
 
 
+def test_voice_engine_lifecycle():
+    engine = DummyBeepEngine(sample_rate=24000)
+
+    # 1. Base prepare_text with str and list inputs
+    res_str = engine.prepare_text("  line 1  \n\n line 2 \n  ")
+    assert res_str == ["line 1", "line 2"]
+
+    res_list = engine.prepare_text(["line A\nline B", "  line C  "])
+    assert res_list == ["line A", "line B", "line C"]
+
+    assert engine.prepare_text("") == []
+
+    # 2. HebTTSEngine prepare_text with nikud conversion
+    heb_engine = HebTTSEngine()
+    cfg_nikud_on = Config(nikud_mode=1)
+    cfg_nikud_off = Config(nikud_mode=0)
+
+    # Mock nikud_maker.convert
+    heb_engine.nikud_maker.convert = MagicMock(side_effect=lambda s: f"converted_{s}")
+
+    lines_on = heb_engine.prepare_text("שלום", cfg_nikud_on)
+    assert lines_on == ["converted_שלום"]
+
+    lines_off = heb_engine.prepare_text("שלום", cfg_nikud_off)
+    assert lines_off == ["שלום"]
+
+    # 3. Base post_create with peak clipping and post-processing
+    audio_clipping = np.array([0.0, 2.0, -2.0, 0.5], dtype=np.float32)
+    cfg_post = Config(fade_ms=0.0, trim_noise=False)
+    processed = engine.post_create(audio_clipping, cfg_post)
+    assert np.isclose(np.abs(processed).max(), 1.0)
+
+    # post_create with empty array returns empty
+    assert len(engine.post_create(np.zeros(0, dtype=np.float32), cfg_post)) == 0
+
+    print("[PASS] VoiceEngine prepare_text and post_create lifecycle verified.")
+
+
 def test_voice_maker_with_custom_engine():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
@@ -256,5 +300,6 @@ if __name__ == "__main__":
     test_get_engine_factory()
     test_heb_tts_engine_create()
     test_heb_tts_engine_synthesize_line()
+    test_voice_engine_lifecycle()
     test_voice_maker_with_custom_engine()
     print("\n🎉 ALL TESTS IN tests/test_engine.py PASSED SUCCESSFULLY!")

@@ -76,6 +76,9 @@ class Config:
     nikud_mode         : NikudMode = NikudMode.Enabled
     chain_speaker      : ChainMode = ChainMode.Disabled
     max_chunk_size     : int = 100
+    fade_ms            : float = 20.0
+    trim_noise         : bool = True
+    pad_ms             : float = 30.0
 
     def __post_init__(self) -> None:
         self.speaker = SpeakerStore.resolve(self.speaker)
@@ -97,6 +100,9 @@ class Config:
         self.nikud_mode = NikudMode.Enabled
         self.chain_speaker = ChainMode.Disabled
         self.max_chunk_size = 100
+        self.fade_ms = 20.0
+        self.trim_noise = True
+        self.pad_ms = 30.0
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -114,6 +120,9 @@ class Config:
             "nikud_mode": int(self.nikud_mode),
             "chain_speaker": int(self.chain_speaker),
             "max_chunk_size": int(self.max_chunk_size),
+            "fade_ms": float(self.fade_ms),
+            "trim_noise": bool(self.trim_noise),
+            "pad_ms": float(self.pad_ms),
         }
 
     def _apply_dict(self, data: Dict[str, Any]) -> "Config":
@@ -142,11 +151,12 @@ class Config:
             self.chain_speaker = ChainMode(int(data["chain_speaker"]))
         if "max_chunk_size" in data and data["max_chunk_size"] is not None:
             self.max_chunk_size = int(data["max_chunk_size"])
-        return self
-        if "chain_speaker" in data and data["chain_speaker"] is not None:
-            self.chain_speaker = ChainMode(int(data["chain_speaker"]))
-        if "max_chunk_size" in data and data["max_chunk_size"] is not None:
-            self.max_chunk_size = int(data["max_chunk_size"])
+        if "fade_ms" in data and data["fade_ms"] is not None:
+            self.fade_ms = float(data["fade_ms"])
+        if "trim_noise" in data and data["trim_noise"] is not None:
+            self.trim_noise = bool(data["trim_noise"])
+        if "pad_ms" in data and data["pad_ms"] is not None:
+            self.pad_ms = float(data["pad_ms"])
         return self
 
     from_dict = _FromDictDescriptor()

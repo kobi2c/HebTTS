@@ -388,8 +388,9 @@ class SampleMaker:
 
         audio_np = self.engine.create(
             speaker=spk,
-            text="\n".join(lines),
+            sample=spk.sample(),
             config=cfg,
+            text=lines,
         )
 
         sr = getattr(self.engine, "sample_rate", 24000)

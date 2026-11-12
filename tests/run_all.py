@@ -41,6 +41,7 @@ from tests.test_engine import (
     test_voice_engine_abc,
     test_get_engine_factory,
     test_heb_tts_engine_create,
+    test_voice_engine_lifecycle,
     test_voice_maker_with_custom_engine,
 )
 from tests.test_nikud_maker import (
@@ -76,6 +77,7 @@ ALL_TESTS = [
     ("VoiceEngine ABC Contract", test_voice_engine_abc),
     ("VoiceEngine Factory & Registration", test_get_engine_factory),
     ("HebTTSEngine Create & Token Stats", test_heb_tts_engine_create),
+    ("VoiceEngine Lifecycle & Post-Processing", test_voice_engine_lifecycle),
     ("VoiceMaker Pluggable Engine Synthesis", test_voice_maker_with_custom_engine),
     ("NikudMaker & Detection", test_nikud_maker_detection_and_stripping),
     ("NikudMaker Phonetic Conversion & Fallback", test_nikud_maker_conversion_phonetic),

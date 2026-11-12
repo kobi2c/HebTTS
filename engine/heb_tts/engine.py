@@ -190,15 +190,27 @@ class HebTTSEngine(VoiceEngine):
         torch.manual_seed(seed)
         return seed
 
+    def prepare_text(
+        self,
+        text: Union[str, List[str]],
+        config: Optional[Config] = None,
+    ) -> List[str]:
+        """
+        Prepares raw text into non-empty, stripped lines with Hebrew Nikud converted
+        into phonetic Ktiv-Male when nikud_mode is enabled.
+        """
+        lines = super().prepare_text(text, config)
+        cfg = config or Config()
+        if cfg.nikud_mode:
+            lines = [self.nikud_maker.convert(line) for line in lines]
+        return lines
+
     def create(
         self,
         speaker: Speaker,
-        text: str,
+        sample: Optional[SpeakerSample] = None,
         config: Optional[Config] = None,
-        prompt_sample: Optional[SpeakerSample] = None,
-        fade_ms: float = 20.0,
-        trim_noise: bool = True,
-        pad_ms: float = 30.0,
+        text: Union[str, List[str]] = "",
         progress_callback: Optional[Callable[[int, int, str], None]] = None,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -208,9 +220,11 @@ class HebTTSEngine(VoiceEngine):
         cfg = config or Config()
 
         # 1. Resolve prompt audio and text
-        sample = prompt_sample if prompt_sample is not None else speaker.sample()
-        prompt_audio = sample.path
-        prompt_text = sample.text
+        resolved_sample = sample if sample is not None else speaker.sample()
+        prompt_audio = resolved_sample.path
+        prompt_text = resolved_sample.text
+        if cfg.nikud_mode:
+            prompt_text = self.nikud_maker.convert(prompt_text)
 
         # 2. Configure RNG seed
         if cfg.seed_mode == SeedMode.Enabled:
@@ -235,8 +249,8 @@ class HebTTSEngine(VoiceEngine):
             self._cached_prompt_audio = prompt_audio
             self._cached_prompt_text = prompt_text
 
-        # 5. Split input text into lines
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        # 5. Prepare text lines
+        lines = self.prepare_text(text, cfg)
         if not lines:
             self._last_tokens_str = None
             return np.zeros(0, dtype=np.float32)
@@ -256,7 +270,7 @@ class HebTTSEngine(VoiceEngine):
                 top_k=int(cfg.top_k),
                 temperature=float(cfg.temperature),
                 mbd=bool(cfg.mbd),
-                nikud_mode=bool(cfg.nikud_mode),
+                nikud_mode=False,
             )
             if seg.shape[-1] > 0:
                 segments.append(seg)
@@ -270,15 +284,8 @@ class HebTTSEngine(VoiceEngine):
         full_audio = torch.cat(segments, dim=-1)
         audio_np = full_audio.squeeze().cpu().numpy()
 
-        max_val = np.abs(audio_np).max() if len(audio_np) > 0 else 0.0
-        if max_val > 1.0:
-            audio_np = audio_np / max_val
-
-        # 6. Apply post-processing
-        if trim_noise:
-            audio_np = NoiseFix.trim(audio_np, sr=self.sample_rate, pad_ms=pad_ms)
-        if fade_ms > 0:
-            audio_np = NoiseFix.fade(audio_np, sr=self.sample_rate, fade_in_ms=fade_ms, fade_out_ms=fade_ms)
+        # 6. Apply post-processing via base post_create
+        audio_np = self.post_create(audio_np, cfg)
 
         # 7. Record token usage statistics
         eos = getattr(model, "last_eos", None)
@@ -288,5 +295,7 @@ class HebTTSEngine(VoiceEngine):
             self._last_tokens_str = f"{p_len} -> {tot_len} (+{diff})"
         else:
             self._last_tokens_str = None
+
+        return audio_np
 
         return audio_np

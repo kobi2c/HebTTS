@@ -303,14 +303,14 @@ class VoiceMaker:
         """Synthesizes a single chunk using the configured VoiceEngine."""
         if prompt_sample is None and (prompt_audio is not None or prompt_text is not None):
             prompt_sample = SpeakerSample(path=prompt_audio or "", text=prompt_text or "")
+        config.fade_ms = fade_ms
+        config.trim_noise = trim_noise
+        config.pad_ms = pad_ms
         return self.engine.create(
             speaker=config.speaker,
-            text=chunk_text,
+            sample=prompt_sample,
             config=config,
-            prompt_sample=prompt_sample,
-            fade_ms=fade_ms,
-            trim_noise=trim_noise,
-            pad_ms=pad_ms,
+            text=chunk_text,
             **kwargs,
         )
     def run(self, args: Optional[Union[argparse.Namespace, List[str]]] = None) -> Path:

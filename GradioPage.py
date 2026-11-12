@@ -155,8 +155,9 @@ class GradioPage:
         try:
             audio_np = self.engine.create(
                 speaker=spk,
-                text=cfg.text,
+                sample=spk.sample(),
                 config=cfg,
+                text=cfg.text,
                 progress_callback=report_progress,
             )
         except Exception as e:

@@ -106,17 +106,32 @@ def test_config_defaults():
     assert cfg.nikud_mode == NikudMode.Enabled
     assert cfg.chain_speaker == ChainMode.Disabled
     assert cfg.max_chunk_size == 100
+    assert cfg.fade_ms == 20.0
+    assert cfg.trim_noise is True
+    assert cfg.pad_ms == 30.0
     print("[PASS] Config defaults verified.")
 
 
 def test_config_dicts():
-    cfg = Config(temperature=1.2, top_k=80, mbd=MbdMode.Enabled, chain_speaker=ChainMode.Enabled, max_chunk_size=75)
+    cfg = Config(
+        temperature=1.2,
+        top_k=80,
+        mbd=MbdMode.Enabled,
+        chain_speaker=ChainMode.Enabled,
+        max_chunk_size=75,
+        fade_ms=15.0,
+        trim_noise=False,
+        pad_ms=45.0,
+    )
     d = cfg.to_dict()
     assert d["temperature"] == 1.2
     assert d["mbd"] == 1
     assert d["top_k"] == 80
     assert d["chain_speaker"] == 1
     assert d["max_chunk_size"] == 75
+    assert d["fade_ms"] == 15.0
+    assert d["trim_noise"] is False
+    assert d["pad_ms"] == 45.0
     assert d["seed"] == 420
     assert d["seed_mode"] == 1
     assert d["nikud_mode"] == 1
@@ -132,6 +147,9 @@ def test_config_dicts():
     assert cfg_from_d.mbd == MbdMode.Enabled
     assert cfg_from_d.chain_speaker == ChainMode.Enabled
     assert cfg_from_d.max_chunk_size == 75
+    assert cfg_from_d.fade_ms == 15.0
+    assert cfg_from_d.trim_noise is False
+    assert cfg_from_d.pad_ms == 45.0
     assert cfg_from_d.seed == 420
     assert cfg_from_d.seed_mode == SeedMode.Enabled
     assert cfg_from_d.nikud_mode == NikudMode.Enabled
