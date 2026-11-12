@@ -243,6 +243,13 @@ def test_voice_engine_lifecycle():
 
     assert engine.prepare_text("") == []
 
+    # split_text directly and via prepare_text respecting max_chunk_size
+    parts_split = VoiceEngine.split_text("משפט ראשון. משפט שני.", max_chunk_size=15)
+    assert parts_split == ["משפט ראשון.", "משפט שני."]
+
+    parts_prep = engine.prepare_text("משפט ראשון. משפט שני.", Config(max_chunk_size=15))
+    assert parts_prep == ["משפט ראשון.", "משפט שני."]
+
     # 2. HebTTSEngine prepare_text with nikud conversion
     heb_engine = HebTTSEngine()
     cfg_nikud_on = Config(nikud_mode=1)

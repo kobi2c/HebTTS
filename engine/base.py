@@ -1,4 +1,5 @@
 import random
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Callable, List, Optional, Union
 import numpy as np
@@ -47,27 +48,96 @@ class VoiceEngine(ABC):
             seed = random.randint(0, 2**31 - 1)
         return int(seed)
 
+    @staticmethod
+    def split_text(text: str, max_chunk_size: int = 100) -> List[str]:
+        """
+        Splits text into natural clauses and sentences not exceeding max_chunk_size characters.
+        Preserves line breaks and sentence context to prevent attention overflow.
+        """
+        all_combined_parts: List[str] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("---") or line.startswith("["):
+                continue
+            # Clean problematic punctuation / dashes
+            line = line.replace("_", " ")
+            line = line.replace("—", "-").replace("–", "-")
+            line = line.replace("’", "'").replace("‘", "'")
+            # 1. Split by major sentence boundaries (.!?)
+            sentences = re.split(r'(?<=[.!?])\s+', line)
+            parts: List[str] = []
+            for s in sentences:
+                s = s.strip()
+                if not s:
+                    continue
+                if len(s) <= max_chunk_size:
+                    parts.append(s)
+                    continue
+                # 2. Split by secondary clause boundaries (,;:)
+                sub_sentences = re.split(r'(?<=[,;:])\s+', s)
+                current_part = ""
+                for sub in sub_sentences:
+                    sub = sub.strip()
+                    if not sub:
+                        continue
+                    if len(sub) > max_chunk_size:
+                        # 3. If still exceeding max_chunk_size, split by words
+                        words = sub.split(" ")
+                        for w in words:
+                            if len(current_part) + len(w) + 1 > max_chunk_size:
+                                if current_part:
+                                    parts.append(current_part.strip())
+                                current_part = w + " "
+                            else:
+                                current_part += w + " "
+                    else:
+                        if len(current_part) + len(sub) + 1 > max_chunk_size:
+                            if current_part:
+                                parts.append(current_part.strip())
+                            current_part = sub + " "
+                        else:
+                            current_part += sub + " "
+                if current_part:
+                    parts.append(current_part.strip())
+            # Combine small parts up to max_chunk_size
+            combined_parts: List[str] = []
+            current_part = ""
+            for p in parts:
+                if len(current_part) + len(p) + 1 <= max_chunk_size:
+                    current_part += (" " if current_part else "") + p
+                else:
+                    if current_part:
+                        combined_parts.append(current_part)
+                    current_part = p
+            if current_part:
+                combined_parts.append(current_part)
+            all_combined_parts.extend(combined_parts)
+        return all_combined_parts
+
     def prepare_text(
         self,
         text: Union[str, List[str]],
         config: Optional[Config] = None,
     ) -> List[str]:
         """
-        Prepares raw text into non-empty, stripped lines.
-        Subclasses can extend this to apply language-specific normalization.
+        Prepares raw text into chunks not exceeding config.max_chunk_size.
+        Splits by sentences (.!?), clauses (,;:), and words.
         """
+        cfg = config or Config()
+        max_size = getattr(cfg, "max_chunk_size", 100) or 100
+
         if isinstance(text, str):
-            lines = [line.strip() for line in text.splitlines() if line.strip()]
+            return self.split_text(text, max_chunk_size=max_size)
         elif isinstance(text, (list, tuple)):
-            lines = []
+            chunks: List[str] = []
             for item in text:
-                for line in str(item).splitlines():
-                    cleaned = line.strip()
-                    if cleaned:
-                        lines.append(cleaned)
+                chunks.extend(self.split_text(str(item), max_chunk_size=max_size))
+            return chunks
         else:
-            lines = [str(text).strip()] if str(text).strip() else []
-        return lines
+            raw = str(text).strip()
+            return self.split_text(raw, max_chunk_size=max_size) if raw else []
 
     def post_create(
         self,

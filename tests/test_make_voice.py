@@ -167,9 +167,7 @@ def test_voice_maker_range_only_run():
 
         vm = VoiceMaker()
         # Mock synthesis to avoid model weight loading in unit test
-        def mock_synth(chunk_text, model=None, **kwargs):
-            if model is not None:
-                model.last_eos = (195, 425)
+        def mock_synth(chunk_text, config=None, prompt_sample=None, **kwargs):
             return np.ones(24000, dtype=np.float32) * 0.1  # 1 second of audio at 24kHz
 
         vm.synthesize_chunk = mock_synth
@@ -227,9 +225,7 @@ def test_voice_maker_format_options_run():
         out_dir = tmp_path / "out"
 
         vm = VoiceMaker()
-        def mock_synth(chunk_text, model=None, **kwargs):
-            if model is not None:
-                model.last_eos = (195, 425)
+        def mock_synth(chunk_text, config=None, prompt_sample=None, **kwargs):
             return np.ones(24000, dtype=np.float32) * 0.1
 
         vm.synthesize_chunk = mock_synth
@@ -281,7 +277,7 @@ def test_voice_maker_table_progress_output():
         mock_model = MagicMock()
         mock_model.last_eos = (195, 425)
 
-        def mock_synth(chunk_text, **kwargs):
+        def mock_synth(chunk_text, config=None, prompt_sample=None, **kwargs):
             vm.engine._last_tokens_str = "195 -> 425 (+230)"
             return np.ones(24000, dtype=np.float32) * 0.1
 
@@ -339,12 +335,11 @@ def test_voice_maker_chain_speaker_execution():
         mock_model = MagicMock()
         mock_model.last_eos = (195, 425)
 
+        base_sample = vm.resolve_speaker_prompt(Config())
         recorded_prompts = []
 
-        def mock_synth(chunk_text, model=None, prompt_audio=None, prompt_text=None, **kwargs):
-            if model is not None:
-                model.last_eos = (195, 425)
-            recorded_prompts.append((prompt_audio, prompt_text))
+        def mock_synth(chunk_text, config, prompt_sample):
+            recorded_prompts.append((prompt_sample.path, prompt_sample.text))
             return np.ones(24000, dtype=np.float32) * 0.1
 
         vm.synthesize_chunk = mock_synth
@@ -353,9 +348,9 @@ def test_voice_maker_chain_speaker_execution():
         # 1. Run with default settings (default chain_speaker=ChainMode.Disabled)
         vm.run(["-i", str(mki_file), "-o", str(out_dir)])
         assert len(recorded_prompts) == 2
-        # Both chunks use base speaker fallback (prompt_audio is None)
-        assert recorded_prompts[0][0] is None
-        assert recorded_prompts[1][0] is None
+        # Both chunks use base speaker fallback
+        assert recorded_prompts[0][0] == base_sample.path
+        assert recorded_prompts[1][0] == base_sample.path
 
         # 2. Run with explicit chain_speaker=ChainMode.Enabled
         recorded_prompts.clear()
@@ -367,8 +362,8 @@ def test_voice_maker_chain_speaker_execution():
         vm_chain.engine.load_model = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
         vm_chain.run(["-i", str(mki_file), "-o", str(out_dir)])
         assert len(recorded_prompts) == 2
-        # Chunk 1: base speaker fallback (prompt_audio is None)
-        assert recorded_prompts[0][0] is None
+        # Chunk 1: base speaker fallback
+        assert recorded_prompts[0][0] == base_sample.path
         # Chunk 2: chained from chunk 1 output wav & text
         assert recorded_prompts[1][0] == str(out_dir / "chain_test_001.wav")
         assert recorded_prompts[1][1] == "שורה ראשונה"
@@ -385,7 +380,7 @@ def test_voice_maker_chain_speaker_execution():
         vm_default.engine.load_model = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
         vm_default.run(["-i", str(mki_enabled), "-o", str(out_dir)])
         assert len(recorded_prompts) == 2
-        assert recorded_prompts[0][0] is None
+        assert recorded_prompts[0][0] == base_sample.path
         assert recorded_prompts[1][0] == str(out_dir / "chain_enabled_001.wav")
         assert recorded_prompts[1][1] == "שורה ראשונה"
 
@@ -406,7 +401,7 @@ def test_voice_maker_max_chunk_size():
         out_dir = tmp_path / "out"
 
         synthesized_chunks = []
-        def mock_synth(chunk_text, model=None, **kwargs):
+        def mock_synth(chunk_text, config=None, prompt_sample=None, **kwargs):
             synthesized_chunks.append(chunk_text)
             return np.ones(24000, dtype=np.float32) * 0.1
 

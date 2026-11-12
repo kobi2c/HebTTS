@@ -5,7 +5,7 @@ from enum import IntEnum
 from pathlib import Path
 import re
 import time
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, Union, TYPE_CHECKING
 import numpy as np
 import soundfile as sf
 
@@ -13,6 +13,10 @@ from .Config import Config, ChainMode
 from .Format import Format
 from .NoiseFix import NoiseFix
 from .Range import RangeList
+from .Speaker import SpeakerSample
+
+if TYPE_CHECKING:
+    from make_voice import VoiceMaker
 
 
 def format_srt_time(seconds: float) -> str:
@@ -28,68 +32,11 @@ def split_text(text: str, max_chunk_size: int = 100) -> List[str]:
     """
     Splits Hebrew text into natural clauses and sentences not exceeding max_chunk_size characters.
     Preserves line breaks and sentence context to prevent VALL-E attention overflow.
+    Delegates to VoiceEngine.split_text.
     """
-    all_combined_parts: List[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith("---") or line.startswith("["):
-            continue
-        # Clean problematic punctuation / dashes
-        line = line.replace("_", " ")
-        line = line.replace("—", "-").replace("–", "-")
-        line = line.replace("’", "'").replace("‘", "'")
-        # 1. Split by major sentence boundaries (.!?)
-        sentences = re.split(r'(?<=[.!?])\s+', line)
-        parts: List[str] = []
-        for s in sentences:
-            s = s.strip()
-            if not s:
-                continue
-            if len(s) <= max_chunk_size:
-                parts.append(s)
-                continue
-            # 2. Split by secondary clause boundaries (,;:)
-            sub_sentences = re.split(r'(?<=[,;:])\s+', s)
-            current_part = ""
-            for sub in sub_sentences:
-                sub = sub.strip()
-                if not sub:
-                    continue
-                if len(sub) > max_chunk_size:
-                    # 3. If still exceeding max_chunk_size, split by words
-                    words = sub.split(" ")
-                    for w in words:
-                        if len(current_part) + len(w) + 1 > max_chunk_size:
-                            if current_part:
-                                parts.append(current_part.strip())
-                            current_part = w + " "
-                        else:
-                            current_part += w + " "
-                else:
-                    if len(current_part) + len(sub) + 1 > max_chunk_size:
-                        if current_part:
-                            parts.append(current_part.strip())
-                        current_part = sub + " "
-                    else:
-                        current_part += sub + " "
-            if current_part:
-                parts.append(current_part.strip())
-        # Combine small parts up to max_chunk_size
-        combined_parts: List[str] = []
-        current_part = ""
-        for p in parts:
-            if len(current_part) + len(p) + 1 <= max_chunk_size:
-                current_part += (" " if current_part else "") + p
-            else:
-                if current_part:
-                    combined_parts.append(current_part)
-                current_part = p
-        if current_part:
-            combined_parts.append(current_part)
-        all_combined_parts.extend(combined_parts)
-    return all_combined_parts
+    from engine.base import VoiceEngine
+
+    return VoiceEngine.split_text(text, max_chunk_size=max_chunk_size)
 
 
 class ChunkStatus(IntEnum):
@@ -260,14 +207,10 @@ class Chunk:
 
     def synthesize(
         self,
-        voice_maker: Any,
+        voice_maker: "VoiceMaker",
         output_dir: Union[str, Path],
         basename: str,
-        prompt_audio: Optional[str] = None,
-        prompt_text: Optional[str] = None,
-        fade_ms: float = 20.0,
-        trim_noise: bool = True,
-        pad_ms: float = 30.0,
+        prompt_sample: Optional[SpeakerSample] = None,
     ) -> np.ndarray:
         """
         Synthesizes chunk speech via voice_maker, saves chunk wav & txt files,
@@ -299,15 +242,17 @@ class Chunk:
                 self.text = override_text
                 is_overridden = True
 
+        sample = (
+            prompt_sample
+            if prompt_sample is not None
+            else (self.config.speaker.sample() if self.config.speaker else SpeakerSample())
+        )
+
         t_synth_start = time.time()
         audio_np = voice_maker.synthesize_chunk(
             chunk_text=self.text,
             config=self.config,
-            prompt_audio=prompt_audio,
-            prompt_text=prompt_text,
-            fade_ms=fade_ms,
-            trim_noise=trim_noise,
-            pad_ms=pad_ms,
+            prompt_sample=sample,
         )
         self.proc_time = time.time() - t_synth_start
 
@@ -455,7 +400,7 @@ class ChunkList:
 
     def process(
         self,
-        voice_maker: Any,
+        voice_maker: "VoiceMaker",
         output_dir: Union[str, Path],
         basename: str,
         active_range: Optional[RangeList] = None,
@@ -525,15 +470,16 @@ class ChunkList:
                         basename=basename,
                         chain_speaker=effective_chain,
                     )
+                    if prompt_audio and prompt_text:
+                        prompt_sample = SpeakerSample(path=prompt_audio, text=prompt_text)
+                    else:
+                        prompt_sample = chunk.config.speaker.sample() if chunk.config.speaker else SpeakerSample()
+
                     chunk.synthesize(
                         voice_maker=voice_maker,
                         output_dir=out_dir,
                         basename=basename,
-                        prompt_audio=prompt_audio,
-                        prompt_text=prompt_text,
-                        fade_ms=fade_ms,
-                        trim_noise=trim_noise,
-                        pad_ms=pad_ms,
+                        prompt_sample=prompt_sample,
                     )
                     stats.record(chunk.status)
                 else:

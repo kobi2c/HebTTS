@@ -288,30 +288,14 @@ class VoiceMaker:
         self,
         chunk_text: str,
         config: Config,
-        model: Optional[Any] = None,
-        audio_tokenizer: Optional[Any] = None,
-        text_collater: Optional[Any] = None,
-        alef_bert_tokenizer: Optional[Any] = None,
-        prompt_sample: Optional[SpeakerSample] = None,
-        prompt_audio: Optional[str] = None,
-        prompt_text: Optional[str] = None,
-        fade_ms: float = 20.0,
-        trim_noise: bool = True,
-        pad_ms: float = 30.0,
-        **kwargs: Any,
+        prompt_sample: SpeakerSample,
     ) -> np.ndarray:
         """Synthesizes a single chunk using the configured VoiceEngine."""
-        if prompt_sample is None and (prompt_audio is not None or prompt_text is not None):
-            prompt_sample = SpeakerSample(path=prompt_audio or "", text=prompt_text or "")
-        config.fade_ms = fade_ms
-        config.trim_noise = trim_noise
-        config.pad_ms = pad_ms
         return self.engine.create(
             speaker=config.speaker,
             sample=prompt_sample,
             config=config,
             text=chunk_text,
-            **kwargs,
         )
     def run(self, args: Optional[Union[argparse.Namespace, List[str]]] = None) -> Path:
         """Main execution workflow for processing .mki files."""
