@@ -42,8 +42,12 @@ class Checkpoint:
 
     @property
     def exists(self) -> bool:
-        """Returns True if the checkpoint file exists on disk."""
-        return os.path.exists(self.full_path)
+        """Returns True if the checkpoint file exists on disk and is non-empty."""
+        p = self.full_path
+        try:
+            return p.is_file() and p.stat().st_size > 0
+        except OSError:
+            return False
 
     def download(self, quiet: bool = False) -> Path:
         """
@@ -58,15 +62,17 @@ class Checkpoint:
 
         out_path = self.full_path.resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
+        if out_path.exists():
+            out_path.unlink()
 
         try:
             import gdown
             print(f"Downloading checkpoint '{self.id}' ({self.gdrive_id}) via gdown...")
-            gdown.download(id=self.gdrive_id, output=str(out_path), quiet=quiet, resume=True)
+            gdown.download(id=self.gdrive_id, output=str(out_path), quiet=quiet, resume=False)
         except ImportError:
             print(f"Downloading checkpoint '{self.id}' via gdown CLI...")
             try:
-                subprocess.run(["gdown", self.gdrive_id, "-O", str(out_path), "--continue"], check=True)
+                subprocess.run(["gdown", self.gdrive_id, "-O", str(out_path)], check=True)
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to download checkpoint using gdown CLI: {e}. "

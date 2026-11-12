@@ -68,7 +68,7 @@ def test_checkpoint_data():
         assert out_path.exists()
         assert out_path.name == "mock_remote.pt"
         mock_gdown.download.assert_called_once_with(
-            id="mock_gdrive_123", output=str(Path(missing_cp.full_path).resolve()), quiet=True, resume=True
+            id="mock_gdrive_123", output=str(Path(missing_cp.full_path).resolve()), quiet=True, resume=False
         )
         if Path(out_path).exists():
             Path(out_path).unlink()

@@ -46,8 +46,10 @@ if "gdown" not in sys.modules:
         def _fake_gdown_download(*args, **kwargs):
             out = kwargs.get("output") or (args[1] if len(args) > 1 else None)
             if out:
-                Path(out).parent.mkdir(parents=True, exist_ok=True)
-                Path(out).touch()
+                p = Path(out)
+                p.parent.mkdir(parents=True, exist_ok=True)
+                if not p.exists():
+                    p.write_bytes(b"dummy_weights")
         mock_gdown.download.side_effect = _fake_gdown_download
         sys.modules["gdown"] = mock_gdown
 

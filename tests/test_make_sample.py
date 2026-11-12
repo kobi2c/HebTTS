@@ -129,10 +129,12 @@ def test_sampler_list_commands():
 def test_sampler_run_execution():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
+        dummy_cp = tmp_path / "dummy_cp.pt"
+        dummy_cp.write_bytes(b"dummy_weights")
         out_wav = tmp_path / "test_out.wav"
         out_mp3 = tmp_path / "test_out.mp3"
 
-        s = SampleMaker(speaker="1", text="שלום עולם", output=out_wav)
+        s = SampleMaker(checkpoint=str(dummy_cp), speaker="1", text="שלום עולם", output=out_wav)
         s.engine.create = MagicMock(return_value=np.zeros(24000, dtype=np.float32))
 
         # 1. Run with instance fields (WAV output)
@@ -142,13 +144,13 @@ def test_sampler_run_execution():
         assert s.engine.create.called
 
         # 2. Run with MP3 format via parse_args in run()
-        result_mp3 = s.run(["--text", "שלום שוב", "--format", "mp3", "--output", str(out_mp3)])
+        result_mp3 = s.run(["--checkpoint", str(dummy_cp), "--text", "שלום שוב", "--format", "mp3", "--output", str(out_mp3)])
         assert result_mp3 == out_mp3
         assert out_mp3.exists()
 
         # 3. Run with both formats via --format both
         both_base = tmp_path / "both_out"
-        s.run(["--text", "שניהם", "--format", "both", "--output", str(both_base)])
+        s.run(["--checkpoint", str(dummy_cp), "--text", "שניהם", "--format", "both", "--output", str(both_base)])
         assert (tmp_path / "both_out.wav").exists()
         assert (tmp_path / "both_out.mp3").exists()
 
@@ -162,7 +164,7 @@ def test_sampler_run_execution():
                 return 16000
 
         custom_eng = MockCustomEngine()
-        s_custom = SampleMaker(engine=custom_eng, speaker="1", text="בדיקת מנוע", output=tmp_path / "cust.wav")
+        s_custom = SampleMaker(engine=custom_eng, checkpoint=str(dummy_cp), speaker="1", text="בדיקת מנוע", output=tmp_path / "cust.wav")
         assert s_custom.engine is custom_eng
         cust_res = s_custom.run()
         assert cust_res == tmp_path / "cust.wav"
