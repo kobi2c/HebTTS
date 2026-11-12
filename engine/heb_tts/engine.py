@@ -6,7 +6,7 @@ from typing import Any, Callable, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from config import AttributeDict, CheckpointStore, Config, NoiseFix, SeedMode, Speaker, SpeakerSample, convert_nikud_text
+from config import AttributeDict, CheckpointStore, Config, NikudMaker, NoiseFix, SeedMode, Speaker, SpeakerSample
 from engine.heb_tts.valle.data import AudioTokenizer, tokenize_audio
 from engine.heb_tts.valle.data.collation import get_text_token_collater
 from engine.heb_tts.valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
@@ -42,6 +42,7 @@ class HebTTSEngine(VoiceEngine):
 
         self.tokens_file: str = tokens_file
         self.vocab_file: str = vocab_file
+        self.nikud_maker: NikudMaker = NikudMaker()
 
         # Model and tokenizer cache
         self.model: Optional[torch.nn.Module] = None
@@ -135,8 +136,8 @@ class HebTTSEngine(VoiceEngine):
     ) -> torch.Tensor:
         """Synthesizes a single line of Hebrew text using the loaded model and tokenizers."""
         if nikud_mode:
-            text = convert_nikud_text(text)
-            prompt_text = convert_nikud_text(prompt_text)
+            text = self.nikud_maker.convert(text)
+            prompt_text = self.nikud_maker.convert(prompt_text)
 
         text_without_space = [replace_chars(f"{prompt_text} {text}").strip().replace(" ", "_")]
         tokens = self.alef_bert_tokenizer._tokenize(text_without_space)

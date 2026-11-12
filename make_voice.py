@@ -30,8 +30,6 @@ from config import (
     ChunkStatus,
     split_text,
     format_srt_time,
-    convert_nikud_text,
-    has_nikud,
     utils,
 )
 from engine import VoiceEngine, HebTTSEngine, get_engine

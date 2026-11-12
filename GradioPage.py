@@ -25,8 +25,7 @@ from config import (
     CloneSpeaker,
     SpeakerStore,
     CheckpointStore,
-    convert_nikud_text,
-    has_nikud,
+    NikudMaker,
     utils,
 )
 from engine import VoiceEngine, get_engine
@@ -40,6 +39,7 @@ class GradioPage:
     ) -> None:
         self.engine: VoiceEngine = get_engine(engine)
         self.config: Config = (config or Config()).reset()
+        self.nikud_maker: NikudMaker = NikudMaker()
         self.demo: Optional[gr.Blocks] = None
 
     @property
@@ -168,8 +168,8 @@ class GradioPage:
         # Converted Ktiv-Male text if disambiguation was applied
         ktiv_male_text = ""
         nikud_mode = NikudMode(int(cfg.nikud_mode))
-        if nikud_mode == NikudMode.Enabled and has_nikud(cfg.text):
-            ktiv_male_text = convert_nikud_text(cfg.text)
+        if nikud_mode == NikudMode.Enabled and self.nikud_maker.has(cfg.text):
+            ktiv_male_text = self.nikud_maker.convert(cfg.text)
 
         return (self.engine.sample_rate, audio_np), cfg.seed, ktiv_male_text
 
@@ -401,7 +401,7 @@ class GradioPage:
                         filepath = file.name if hasattr(file, "name") else str(file)
                         with open(filepath, "r", encoding="utf-8") as f:
                             content = f.read().strip()
-                            km = convert_nikud_text(content) if (NikudMode(int(enabled)) == NikudMode.Enabled and has_nikud(content)) else ""
+                            km = self.nikud_maker.convert(content) if (NikudMode(int(enabled)) == NikudMode.Enabled and self.nikud_maker.has(content)) else ""
                             return content, km
                     except Exception as e:
                         return f"Error reading file: {e}", ""
@@ -415,8 +415,8 @@ class GradioPage:
 
             # Preview Ktiv-Male when text editing finishes or nikud toggle changes
             def on_text_or_nikud_change(text_val: str, enabled: Union[NikudMode, int, bool]) -> str:
-                if NikudMode(int(enabled)) == NikudMode.Enabled and text_val and has_nikud(text_val):
-                    return convert_nikud_text(text_val)
+                if NikudMode(int(enabled)) == NikudMode.Enabled and text_val and self.nikud_maker.has(text_val):
+                    return self.nikud_maker.convert(text_val)
                 return ""
 
             text_input.blur(

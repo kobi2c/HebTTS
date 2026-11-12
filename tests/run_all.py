@@ -43,9 +43,9 @@ from tests.test_engine import (
     test_heb_tts_engine_create,
     test_voice_maker_with_custom_engine,
 )
-from tests.test_nikud_converter import (
-    test_nikud_detection_and_stripping,
-    test_nikud_conversion_phonetic,
+from tests.test_nikud_maker import (
+    test_nikud_maker_detection_and_stripping,
+    test_nikud_maker_conversion_phonetic,
 )
 from tests.test_utils import (
     test_attribute_dict,
@@ -77,8 +77,8 @@ ALL_TESTS = [
     ("VoiceEngine Factory & Registration", test_get_engine_factory),
     ("HebTTSEngine Create & Token Stats", test_heb_tts_engine_create),
     ("VoiceMaker Pluggable Engine Synthesis", test_voice_maker_with_custom_engine),
-    ("Nikud Converter & Detection", test_nikud_detection_and_stripping),
-    ("Nikud Phonetic Conversion & Fallback", test_nikud_conversion_phonetic),
+    ("NikudMaker & Detection", test_nikud_maker_detection_and_stripping),
+    ("NikudMaker Phonetic Conversion & Fallback", test_nikud_maker_conversion_phonetic),
     ("AttributeDict & Dict Operations", test_attribute_dict),
     ("Soundfile IO Fallbacks & Format", test_soundfile_fallbacks),
 ]

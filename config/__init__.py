@@ -14,14 +14,9 @@ from .NoiseFix   import ( NoiseFix, trim_leading_noise, apply_fade )
 from .Chunk      import ( Chunk      , ChunkList       , ChunkStatus    , ChunkStats,
                           split_text , format_srt_time                  )
 from .utils      import ( AttributeDict                                 )
-from .nikud_converter import (
-    convert_nikud_text,
-    has_nikud,
-    strip_nikud,
-    vocalized_word_to_phonetic,
-)
+from .NikudMaker import ( NikudMaker                                   )
 from . import utils
-from . import nikud_converter
+from . import NikudMaker as nikud_maker
 
 __all__ = [
     "Config",
@@ -51,10 +46,7 @@ __all__ = [
     "split_text",
     "format_srt_time",
     "AttributeDict",
-    "convert_nikud_text",
-    "has_nikud",
-    "strip_nikud",
-    "vocalized_word_to_phonetic",
+    "NikudMaker",
     "utils",
-    "nikud_converter",
+    "nikud_maker",
 ]
