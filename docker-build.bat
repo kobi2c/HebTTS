@@ -3,7 +3,15 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 cd /d "%SCRIPT_DIR%"
 
-if /i "%~1"=="hebtts" (
+if /i "%~1"=="unified" (
+    shift
+    echo Building Unified image (make-voice:latest)...
+    docker build -f Dockerfile -t make-voice:latest . %*
+) else if /i "%~1"=="latest" (
+    shift
+    echo Building Unified image (make-voice:latest)...
+    docker build -f Dockerfile -t make-voice:latest . %*
+) else if /i "%~1"=="hebtts" (
     shift
     echo Building HebTTS image (make-voice:hebtts)...
     docker build -f docker/hebtts/Dockerfile -t make-voice:hebtts . %*
@@ -15,4 +23,3 @@ if /i "%~1"=="hebtts" (
     echo Building images via docker-compose...
     docker compose build %*
 )
-

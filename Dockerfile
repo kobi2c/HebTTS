@@ -12,18 +12,27 @@ ENV DEBIAN_FRONTEND=noninteractive \
     FLASH_ATTN_CUDA_ARCHS="120" \
     FORCE_CUDA=1 \
     NVCC_FLAGS="-Xcompiler -Wno-register" \
+    MAX_JOBS=4 \
+    CAUSAL_CONV1D_FORCE_BUILD=TRUE \
+    MAMBA_FORCE_BUILD=TRUE \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     LC_ALL=C.UTF-8 \
-    LANG=C.UTF-8 
+    LANG=C.UTF-8
 
-# Install system dependencies
+# Install system dependencies (build tools + audio + speech)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
     git \
+    wget \
     curl \
     ca-certificates \
     ffmpeg \
     libsndfile1 \
+    sox \
+    libsox-fmt-all \
     espeak-ng \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
@@ -36,8 +45,17 @@ WORKDIR /app
 # Copy dependency specifications first to leverage Docker layer caching
 COPY pyproject.toml .python-version ./
 
-# Install python and project dependencies into virtual environment
+# Install python and project dependencies into virtual environment via uv
 RUN uv sync --no-install-project && uv cache clean
+
+# Build and install CUDA acceleration extensions for Zonos hybrid backbone
+RUN pip install --no-cache-dir --no-build-isolation \
+      --no-binary flash-attn 'flash-attn==2.7.4.post1' && \
+    pip install --no-cache-dir --no-build-isolation \
+      git+https://github.com/Dao-AILab/causal-conv1d.git && \
+    pip install --no-cache-dir --no-build-isolation \
+      git+https://github.com/state-spaces/mamba.git && \
+    pip install --no-cache-dir "apache-tvm-ffi<=0.1.9"
 
 # Copy project files
 COPY . ./
@@ -49,4 +67,6 @@ RUN rm -f /opt/nvidia/entrypoint.d/10-banner.sh \
           /opt/nvidia/entrypoint.d/30-container-license.txt \
     && echo "CUDA Version ${CUDA_VERSION:-12.8.0}" > /opt/nvidia/entrypoint.d/10-banner.txt
 
-CMD ["bash"]
+EXPOSE 7860
+
+CMD ["python", "GradioPage.py"]

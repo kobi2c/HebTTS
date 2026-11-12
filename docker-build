@@ -4,7 +4,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
 
-if [ "$1" = "hebtts" ]; then
+if [ "$1" = "unified" ] || [ "$1" = "latest" ]; then
+    shift
+    echo "Building Unified image (make-voice:latest)..."
+    docker build -f Dockerfile -t make-voice:latest . "$@"
+elif [ "$1" = "hebtts" ]; then
     shift
     echo "Building HebTTS image (make-voice:hebtts)..."
     docker build -f docker/hebtts/Dockerfile -t make-voice:hebtts . "$@"
@@ -16,4 +20,3 @@ else
     echo "Building images via docker compose..."
     docker compose build "$@"
 fi
-

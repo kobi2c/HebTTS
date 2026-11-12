@@ -10,12 +10,12 @@ if [ $# -eq 0 ]; then
         -v "${SCRIPT_DIR}:/app" \
         -v "${SCRIPT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
         -v "${SCRIPT_DIR}/.cache/huggingface:/root/.cache/huggingface" \
-        -p 7861:7860 \
-        make-voice:hebtts python GradioPage.py
+        -p 7860:7860 \
+        make-voice:latest python GradioPage.py
 else
     docker run --gpus all --rm -it \
         -v "${SCRIPT_DIR}:/app" \
         -v "${SCRIPT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
         -v "${SCRIPT_DIR}/.cache/huggingface:/root/.cache/huggingface" \
-        make-voice:hebtts "$@"
+        make-voice:latest "$@"
 fi

@@ -1,4 +1,28 @@
 services:
+  # Unified image supporting both engines and Gradio web interface on port 7860
+  unified:
+    image: make-voice:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+      - ./.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints
+      - ./.cache/huggingface:/root/.cache/huggingface
+    ports:
+      - "7860:7860"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: python GradioPage.py
+    stdin_open: true
+    tty: true
+
+  # Standalone HebTTS / Valle service on port 7861
   hebtts:
     image: make-voice:hebtts
     build:
@@ -21,6 +45,7 @@ services:
     stdin_open: true
     tty: true
 
+  # Standalone Zonos service on port 7862
   zonos:
     image: make-voice:zonos
     build:
