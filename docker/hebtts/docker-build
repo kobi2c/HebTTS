@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+echo "Building HebTTS image (make-voice:hebtts)..."
+docker build -f "${SCRIPT_DIR}/Dockerfile" -t make-voice:hebtts "${ROOT_DIR}" "$@"
+

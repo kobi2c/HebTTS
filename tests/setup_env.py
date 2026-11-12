@@ -38,6 +38,19 @@ for mod in [
         except ImportError:
             sys.modules[mod] = MagicMock()
 
+if "gdown" not in sys.modules:
+    try:
+        __import__("gdown")
+    except ImportError:
+        mock_gdown = MagicMock()
+        def _fake_gdown_download(*args, **kwargs):
+            out = kwargs.get("output") or (args[1] if len(args) > 1 else None)
+            if out:
+                Path(out).parent.mkdir(parents=True, exist_ok=True)
+                Path(out).touch()
+        mock_gdown.download.side_effect = _fake_gdown_download
+        sys.modules["gdown"] = mock_gdown
+
 if isinstance(sys.modules.get("torch"), MagicMock):
     import numpy as np
     torch_mock = sys.modules["torch"]

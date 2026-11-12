@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+mkdir -p "${ROOT_DIR}/.cache/torch/hub/checkpoints"
+mkdir -p "${ROOT_DIR}/.cache/huggingface"
+
+if [ $# -eq 0 ]; then
+    docker run --gpus all --rm -it \
+        -v "${ROOT_DIR}:/app" \
+        -v "${ROOT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
+        -v "${ROOT_DIR}/.cache/huggingface:/root/.cache/huggingface" \
+        -p 7862:7860 \
+        make-voice:zonos python engine/zonos/zonos/gradio_interface.py
+else
+    docker run --gpus all --rm -it \
+        -v "${ROOT_DIR}:/app" \
+        -v "${ROOT_DIR}/.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints" \
+        -v "${ROOT_DIR}/.cache/huggingface:/root/.cache/huggingface" \
+        make-voice:zonos "$@"
+fi

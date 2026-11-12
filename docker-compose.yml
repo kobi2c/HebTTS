@@ -1,13 +1,15 @@
 services:
   hebtts:
-    image: hebtts:latest
-    build: .
+    image: make-voice:hebtts
+    build:
+      context: .
+      dockerfile: docker/hebtts/Dockerfile
     volumes:
       - .:/app
       - ./.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints
       - ./.cache/huggingface:/root/.cache/huggingface
     ports:
-      - "7860:7860"
+      - "7861:7860"
     deploy:
       resources:
         reservations:
@@ -15,6 +17,28 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    command: python make_sample.py
+    command: python GradioPage.py
+    stdin_open: true
+    tty: true
+
+  zonos:
+    image: make-voice:zonos
+    build:
+      context: .
+      dockerfile: docker/zonos/Dockerfile
+    volumes:
+      - .:/app
+      - ./.cache/torch/hub/checkpoints:/root/.cache/torch/hub/checkpoints
+      - ./.cache/huggingface:/root/.cache/huggingface
+    ports:
+      - "7862:7860"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: python engine/zonos/zonos/gradio_interface.py
     stdin_open: true
     tty: true
