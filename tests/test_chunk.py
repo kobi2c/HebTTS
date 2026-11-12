@@ -24,9 +24,9 @@ from config import (
     ChunkStats,
     Chunk,
     ChunkList,
-    split_text,
     format_srt_time,
 )
+from engine.base import VoiceEngine
 
 
 def test_chunk_status_int_enum():
@@ -86,21 +86,21 @@ def test_split_text_and_srt_formatting():
     assert format_srt_time(65.5) == "00:01:05,500"
     assert format_srt_time(3661.123) == "01:01:01,123"
 
-    # 2. split_text
+    # 2. VoiceEngine.split_text
     long_text = (
         "היום אנחנו הולכים ללמוד על העולם הקסום של כללי ההתחלקות, "
         "אותם קיצורי דרך נחמדים שמצילים אותנו מהמטלה המייגעת לחלוטין של חילוק ארוך. "
         "האם יצא לכם להביט במספר ענק ולדעת מיד אם אפשר לפצל אותו בשלמות לקבוצות קטנות יותר?"
     )
-    parts = split_text(long_text, max_chunk_size=100)
+    parts = VoiceEngine.split_text(long_text, max_chunk_size=100)
     assert len(parts) >= 2
     for p in parts:
         assert len(p) <= 100
-    parts_small = split_text(long_text, max_chunk_size=60)
+    parts_small = VoiceEngine.split_text(long_text, max_chunk_size=60)
     for p in parts_small:
         assert len(p) <= 60
     assert len(parts_small) > len(parts)
-    print("[PASS] split_text and format_srt_time verified.")
+    print("[PASS] VoiceEngine.split_text and format_srt_time verified.")
 
 
 def test_chunk_paths_and_table_row():

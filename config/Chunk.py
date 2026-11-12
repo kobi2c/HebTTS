@@ -28,17 +28,6 @@ def format_srt_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def split_text(text: str, max_chunk_size: int = 100) -> List[str]:
-    """
-    Splits Hebrew text into natural clauses and sentences not exceeding max_chunk_size characters.
-    Preserves line breaks and sentence context to prevent VALL-E attention overflow.
-    Delegates to VoiceEngine.split_text.
-    """
-    from engine.base import VoiceEngine
-
-    return VoiceEngine.split_text(text, max_chunk_size=max_chunk_size)
-
-
 class ChunkStatus(IntEnum):
     """Lifecycle status of an individual audio chunk during batch processing."""
     PENDING   =  0
@@ -316,8 +305,6 @@ class ChunkList:
     def append(self, chunk: Chunk) -> None:
         self.chunks.append(chunk)
 
-    split_text = staticmethod(split_text)
-
     @classmethod
     def from_blocks(
         cls,
@@ -325,6 +312,8 @@ class ChunkList:
         max_chunk_size: Optional[int] = None,
     ) -> "ChunkList":
         """Constructs a ChunkList from parsed MKI blocks [(Config, text)]."""
+        from engine.base import VoiceEngine
+
         effective_chunk_size = (
             max_chunk_size
             if max_chunk_size is not None
@@ -333,7 +322,7 @@ class ChunkList:
         chunk_items: List[Chunk] = []
         idx = 1
         for block_config, block_text in blocks:
-            parts = split_text(block_text, max_chunk_size=effective_chunk_size)
+            parts = VoiceEngine.split_text(block_text, max_chunk_size=effective_chunk_size)
             for part in parts:
                 chunk_items.append(Chunk(index=idx, config=block_config, text=part))
                 idx += 1

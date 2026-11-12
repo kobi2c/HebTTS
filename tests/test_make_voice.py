@@ -9,7 +9,8 @@ if str(root_dir) not in sys.path:
 
 import tests.setup_env  # noqa: F401
 
-from config import Config, Format, ChainMode, NoiseFix, split_text
+from config import Config, Format, ChainMode, NoiseFix
+from engine import VoiceEngine
 from make_voice import VoiceMaker, VoiceMakerParser
 
 
@@ -36,13 +37,13 @@ def test_mki_parsing_with_config():
     assert b2_cfg.temperature == 1.0  # reset back to base_cfg
     assert b2_text == "שלום שורה שנייה"
 
-    # Test split_text with default max_chunk_size=100
+    # Test VoiceEngine.split_text with default max_chunk_size=100
     long_hebrew = (
         "היום אנחנו הולכים ללמוד על העולם הקסום של כללי ההתחלקות, "
         "אותם קיצורי דרך נחמדים שמצילים אותנו מהמטלה המייגעת לחלוטין של חילוק ארוך. "
         "האם יצא לכם להביט במספר ענק ולדעת מיד אם אפשר לפצל אותו בשלמות לקבוצות קטנות יותר?"
     )
-    chunks = split_text(long_hebrew)
+    chunks = VoiceEngine.split_text(long_hebrew)
     for c in chunks:
         assert len(c) <= 100, f"Chunk exceeded max_chunk_size=100: {len(c)} chars ({c})"
     assert len(chunks) >= 2
@@ -72,7 +73,7 @@ def test_mki_parsing_with_config():
     cut_ms = ((len(test_sig) - len(trimmed)) / sr) * 1000.0
     assert 200.0 <= cut_ms <= 230.0, f"Expected cut between 200ms and 230ms, got {cut_ms}ms"
 
-    print("[PASS] VoiceMaker.parse_mki, split_text, apply_fade, and trim_leading_noise verified.")
+    print("[PASS] VoiceMaker.parse_mki, VoiceEngine.split_text, apply_fade, and trim_leading_noise verified.")
 
 
 def test_voice_maker_args():

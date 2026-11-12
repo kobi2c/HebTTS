@@ -28,7 +28,6 @@ from config import (
     Chunk,
     ChunkList,
     ChunkStatus,
-    split_text,
     format_srt_time,
     utils,
 )

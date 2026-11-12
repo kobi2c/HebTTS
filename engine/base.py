@@ -126,18 +126,18 @@ class VoiceEngine(ABC):
         Splits by sentences (.!?), clauses (,;:), and words.
         """
         cfg = config or Config()
-        max_size = getattr(cfg, "max_chunk_size", 100) or 100
+        max_chunk_size=cfg.max_chunk_size
 
         if isinstance(text, str):
-            return self.split_text(text, max_chunk_size=max_size)
+            return self.split_text(text, max_chunk_size=max_chunk_size)
         elif isinstance(text, (list, tuple)):
             chunks: List[str] = []
             for item in text:
-                chunks.extend(self.split_text(str(item), max_chunk_size=max_size))
+                chunks.extend(self.split_text(str(item), max_chunk_size=max_chunk_size))
             return chunks
         else:
             raw = str(text).strip()
-            return self.split_text(raw, max_chunk_size=max_size) if raw else []
+            return self.split_text(raw, max_chunk_size=max_chunk_size) if raw else []
 
     def post_create(
         self,
