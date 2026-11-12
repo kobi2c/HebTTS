@@ -21,13 +21,30 @@ def get_engine(
         key = engine.strip().lower().replace("-", "_")
         if key in ("hebtts", "heb_tts", "valle", "valle_hebrew"):
             return HebTTSEngine(**kwargs)
+        if key in ("zonos", "zonos_hebrew", "zonos_engine"):
+            try:
+                from .zonos import ZonosEngine
+            except ImportError as e:
+                raise ImportError(
+                    f"ZonosEngine dependencies could not be imported: {e}. "
+                    "Ensure Zonos packages (transformers, inflect, kanjize, etc.) are installed."
+                ) from e
+            return ZonosEngine(**kwargs)
         raise ValueError(f"Unknown VoiceEngine name: '{engine}'")
     raise TypeError(f"Expected VoiceEngine or str, got {type(engine)}")
+
+
+def __getattr__(name: str) -> Any:
+    if name == "ZonosEngine":
+        from .zonos import ZonosEngine
+        return ZonosEngine
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "VoiceEngine",
     "HebTTSEngine",
+    "ZonosEngine",
     "get_engine",
 ]
 

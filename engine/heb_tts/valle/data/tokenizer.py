@@ -496,7 +496,7 @@ class AudioTokenizer:
 def tokenize_audio(tokenizer: AudioTokenizer, audio_path: str):
     # Load and pre-process the audio waveform
     wav, sr = torchaudio.load(audio_path)
-    wav = convert_audio(wav, sr, tokenizer.sample_rate, tokenizer.channels)
+    wav = convert_audio(wav, int(sr), int(tokenizer.sample_rate), tokenizer.channels)
     wav = wav.unsqueeze(0)
 
     # Extract discrete codes from EnCodec

@@ -79,6 +79,17 @@ class Config:
     fade_ms            : float = 20.0
     trim_noise         : bool = True
     pad_ms             : float = 30.0
+    # Zonos conditioning fields
+    model_choice       : str = "notmax123/Zonos-Hebrew"
+    language           : str = "he"
+    fmax               : float = 24000.0
+    pitch_std          : float = 45.0
+    speaking_rate      : float = 15.0
+    dnsmos_ovrl        : float = 4.0
+    speaker_noised     : bool = False
+    cfg_scale          : float = 2.0
+    vq_score           : float = 0.78
+    emotions           : List[float] = field(default_factory=lambda: [0.0] * 8)
 
     def __post_init__(self) -> None:
         self.speaker = SpeakerStore.resolve(self.speaker)
@@ -103,6 +114,17 @@ class Config:
         self.fade_ms = 20.0
         self.trim_noise = True
         self.pad_ms = 30.0
+        # Zonos defaults
+        self.model_choice = "notmax123/Zonos-Hebrew"
+        self.language = "he"
+        self.fmax = 24000.0
+        self.pitch_std = 45.0
+        self.speaking_rate = 15.0
+        self.dnsmos_ovrl = 4.0
+        self.speaker_noised = False
+        self.cfg_scale = 2.0
+        self.vq_score = 0.78
+        self.emotions = [0.0] * 8
         return self
 
     def to_dict(self) -> Dict[str, Any]:
@@ -123,6 +145,17 @@ class Config:
             "fade_ms": float(self.fade_ms),
             "trim_noise": bool(self.trim_noise),
             "pad_ms": float(self.pad_ms),
+            # Zonos fields
+            "model_choice": str(self.model_choice),
+            "language": str(self.language),
+            "fmax": float(self.fmax),
+            "pitch_std": float(self.pitch_std),
+            "speaking_rate": float(self.speaking_rate),
+            "dnsmos_ovrl": float(self.dnsmos_ovrl),
+            "speaker_noised": bool(self.speaker_noised),
+            "cfg_scale": float(self.cfg_scale),
+            "vq_score": float(self.vq_score),
+            "emotions": [float(x) for x in self.emotions],
         }
 
     def _apply_dict(self, data: Dict[str, Any]) -> "Config":
@@ -157,6 +190,27 @@ class Config:
             self.trim_noise = bool(data["trim_noise"])
         if "pad_ms" in data and data["pad_ms"] is not None:
             self.pad_ms = float(data["pad_ms"])
+        # Zonos fields
+        if "model_choice" in data and data["model_choice"] is not None:
+            self.model_choice = str(data["model_choice"])
+        if "language" in data and data["language"] is not None:
+            self.language = str(data["language"])
+        if "fmax" in data and data["fmax"] is not None:
+            self.fmax = float(data["fmax"])
+        if "pitch_std" in data and data["pitch_std"] is not None:
+            self.pitch_std = float(data["pitch_std"])
+        if "speaking_rate" in data and data["speaking_rate"] is not None:
+            self.speaking_rate = float(data["speaking_rate"])
+        if "dnsmos_ovrl" in data and data["dnsmos_ovrl"] is not None:
+            self.dnsmos_ovrl = float(data["dnsmos_ovrl"])
+        if "speaker_noised" in data and data["speaker_noised"] is not None:
+            self.speaker_noised = bool(data["speaker_noised"])
+        if "cfg_scale" in data and data["cfg_scale"] is not None:
+            self.cfg_scale = float(data["cfg_scale"])
+        if "vq_score" in data and data["vq_score"] is not None:
+            self.vq_score = float(data["vq_score"])
+        if "emotions" in data and data["emotions"] is not None:
+            self.emotions = [float(x) for x in data["emotions"]]
         return self
 
     from_dict = _FromDictDescriptor()

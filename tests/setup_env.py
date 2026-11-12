@@ -31,6 +31,12 @@ for mod in [
     "engine.heb_tts.valle.data.collation",
     "engine.heb_tts.valle.data.hebrew_root_tokenizer",
     "engine.heb_tts.valle.models",
+    "safetensors",
+    "transformers",
+    "zonos",
+    "zonos.model",
+    "zonos.conditioning",
+    "zonos.utils",
 ]:
     if mod not in sys.modules:
         try:

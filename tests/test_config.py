@@ -109,6 +109,17 @@ def test_config_defaults():
     assert cfg.fade_ms == 20.0
     assert cfg.trim_noise is True
     assert cfg.pad_ms == 30.0
+    # Zonos defaults
+    assert cfg.model_choice == "notmax123/Zonos-Hebrew"
+    assert cfg.language == "he"
+    assert cfg.fmax == 24000.0
+    assert cfg.pitch_std == 45.0
+    assert cfg.speaking_rate == 15.0
+    assert cfg.dnsmos_ovrl == 4.0
+    assert cfg.speaker_noised is False
+    assert cfg.cfg_scale == 2.0
+    assert cfg.vq_score == 0.78
+    assert cfg.emotions == [0.0] * 8
     print("[PASS] Config defaults verified.")
 
 
@@ -122,6 +133,16 @@ def test_config_dicts():
         fade_ms=15.0,
         trim_noise=False,
         pad_ms=45.0,
+        model_choice="Zyphra/Zonos-v0.1-transformer",
+        language="en-us",
+        fmax=22050.0,
+        pitch_std=50.0,
+        speaking_rate=18.0,
+        dnsmos_ovrl=4.5,
+        speaker_noised=True,
+        cfg_scale=3.0,
+        vq_score=0.82,
+        emotions=[0.1] * 8,
     )
     d = cfg.to_dict()
     assert d["temperature"] == 1.2
@@ -135,6 +156,16 @@ def test_config_dicts():
     assert d["seed"] == 420
     assert d["seed_mode"] == 1
     assert d["nikud_mode"] == 1
+    assert d["model_choice"] == "Zyphra/Zonos-v0.1-transformer"
+    assert d["language"] == "en-us"
+    assert d["fmax"] == 22050.0
+    assert d["pitch_std"] == 50.0
+    assert d["speaking_rate"] == 18.0
+    assert d["dnsmos_ovrl"] == 4.5
+    assert d["speaker_noised"] is True
+    assert d["cfg_scale"] == 3.0
+    assert d["vq_score"] == 0.82
+    assert d["emotions"] == [0.1] * 8
     assert "speaker_mode" not in d
     assert "clone" not in d
     assert "speaker" in d
@@ -153,6 +184,16 @@ def test_config_dicts():
     assert cfg_from_d.seed == 420
     assert cfg_from_d.seed_mode == SeedMode.Enabled
     assert cfg_from_d.nikud_mode == NikudMode.Enabled
+    assert cfg_from_d.model_choice == "Zyphra/Zonos-v0.1-transformer"
+    assert cfg_from_d.language == "en-us"
+    assert cfg_from_d.fmax == 22050.0
+    assert cfg_from_d.pitch_std == 50.0
+    assert cfg_from_d.speaking_rate == 18.0
+    assert cfg_from_d.dnsmos_ovrl == 4.5
+    assert cfg_from_d.speaker_noised is True
+    assert cfg_from_d.cfg_scale == 3.0
+    assert cfg_from_d.vq_score == 0.82
+    assert cfg_from_d.emotions == [0.1] * 8
     assert isinstance(cfg_from_d.speaker, Speaker)
     assert isinstance(cfg_from_d.speaker, LocalSpeaker)
 

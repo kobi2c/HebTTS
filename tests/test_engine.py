@@ -1,6 +1,7 @@
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, Callable, List, Optional, Union
 from unittest.mock import MagicMock
 
 # Ensure project root is in sys.path
@@ -118,12 +119,22 @@ def test_heb_tts_engine_create():
     mock_model = MagicMock()
     mock_model.last_eos = (195, 425)
 
-    mock_tensor = MagicMock()
-    mock_tensor.squeeze.return_value.cpu.return_value.numpy.return_value = np.ones(2400, dtype=np.float32) * 0.5
-    mock_tensor.shape = (1, 2400)
+    if hasattr(torch, "zeros") and not isinstance(torch.zeros, MagicMock):
+        mock_tensor = torch.ones((1, 2400), dtype=torch.float32) * 0.5
+        mock_encoded = torch.zeros((1, 8, 50), dtype=torch.long)
+    else:
+        mock_tensor = MagicMock()
+        mock_tensor.shape = (1, 2400)
+        mock_tensor.squeeze.return_value.cpu.return_value.numpy.return_value = np.ones(2400, dtype=np.float32) * 0.5
+        mock_encoded = MagicMock()
+
+    mock_tok = MagicMock()
+    mock_tok.encode.return_value = [[mock_encoded]]
+    mock_tok.sample_rate = 24000
+    mock_tok.channels = 1
 
     engine = HebTTSEngine()
-    engine.load_model = MagicMock(return_value=(mock_model, MagicMock(), MagicMock(), MagicMock()))
+    engine.load_model = MagicMock(return_value=(mock_model, mock_tok, MagicMock(), MagicMock()))
 
     def fake_synthesize(*args, **kwargs):
         mock_model.last_eos = (195, 425)

@@ -52,6 +52,11 @@ from tests.test_utils import (
     test_attribute_dict,
     test_soundfile_fallbacks,
 )
+from tests.test_zonos_engine import (
+    test_zonos_engine_contract,
+    test_zonos_engine_factory,
+    test_zonos_engine_create_flow,
+)
 
 ALL_TESTS = [
     ("Enums", test_enums),
@@ -79,6 +84,9 @@ ALL_TESTS = [
     ("HebTTSEngine Create & Token Stats", test_heb_tts_engine_create),
     ("VoiceEngine Lifecycle & Post-Processing", test_voice_engine_lifecycle),
     ("VoiceMaker Pluggable Engine Synthesis", test_voice_maker_with_custom_engine),
+    ("ZonosEngine Contract & Properties", test_zonos_engine_contract),
+    ("ZonosEngine Factory Integration", test_zonos_engine_factory),
+    ("ZonosEngine Create & Synthesis Flow", test_zonos_engine_create_flow),
     ("NikudMaker & Detection", test_nikud_maker_detection_and_stripping),
     ("NikudMaker Phonetic Conversion & Fallback", test_nikud_maker_conversion_phonetic),
     ("AttributeDict & Dict Operations", test_attribute_dict),

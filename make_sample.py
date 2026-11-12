@@ -47,10 +47,11 @@ class SampleMakerParser(argparse.ArgumentParser):
             help="Speaker name or number (default: 1)",
         )
         self.add_argument(
-            "--checkpoint",
+            "--checkpoint", "--model",
             type=str,
             default="1",
-            help="Checkpoint number or path (default: 1 -> checkpoint.pt)",
+            dest="checkpoint",
+            help="Checkpoint number/path or Zonos model ID (default: 1)",
         )
         self.add_argument(
             "--input",
@@ -202,6 +203,20 @@ class SampleMaker:
         self._print_table("Available speakers:", speakers, fields)
 
     def print_checkpoints(self) -> None:
+        engine = getattr(self, "engine", None)
+        if engine is not None and type(engine).__name__ == "ZonosEngine":
+            zonos_models = [
+                {"id": "notmax123/Zonos-Hebrew", "description": "Hebrew (Hybrid)"},
+                {"id": "Zyphra/Zonos-v0.1-transformer", "description": "English / Multi (Transformer)"},
+                {"id": "Zyphra/Zonos-v0.1-hybrid", "description": "English / Multi (Hybrid)"},
+            ]
+            fields = [
+                {"title": "Model ID",    "width": 35, "value": lambda m: m["id"]},
+                {"title": "Description", "width": 0,  "value": lambda m: m["description"]},
+            ]
+            self._print_table("Available Zonos models:", zonos_models, fields)
+            return
+
         checkpoints = self.checkpoints.list()
         fields = [
             {"title": "Checkpoint ID", "width": 20, "value": lambda cp: cp.id},
@@ -212,6 +227,15 @@ class SampleMaker:
         self._print_table("Available checkpoints:", checkpoints, fields)
 
     def resolve_checkpoint(self, checkpoint_arg: str) -> Path:
+        engine = getattr(self, "engine", None)
+        if engine is not None and type(engine).__name__ == "ZonosEngine":
+            zonos_models = {
+                "1": "notmax123/Zonos-Hebrew",
+                "2": "Zyphra/Zonos-v0.1-transformer",
+                "3": "Zyphra/Zonos-v0.1-hybrid",
+            }
+            return Path(zonos_models.get(str(checkpoint_arg), checkpoint_arg))
+
         cp = self.checkpoints.find(checkpoint_arg)
         if cp:
             if not cp.exists and cp.gdrive_id:
@@ -367,6 +391,7 @@ class SampleMaker:
 
         cfg = Config(
             checkpoint=str(checkpoint_path),
+            model_choice=str(checkpoint_path),
             speaker=spk,
             top_k=self.top_k,
             temperature=self.temperature,
