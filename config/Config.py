@@ -64,6 +64,7 @@ class _FromDictDescriptor:
 
 @dataclass
 class Config:
+    engine             : str = "hebtts"
     checkpoint         : str = "checkpoint.pt"
     speaker            : Speaker = field(default_factory=SpeakerStore.default)
     text               : str = DEFAULT_TEXT
@@ -90,6 +91,11 @@ class Config:
     cfg_scale          : float = 2.0
     vq_score           : float = 0.78
     emotions           : List[float] = field(default_factory=lambda: [0.0] * 8)
+    min_p              : float = 0.1
+    top_p              : float = 0.0
+    linear             : float = 0.0
+    confidence         : float = 0.0
+    quadratic          : float = 0.0
 
     def __post_init__(self) -> None:
         self.speaker = SpeakerStore.resolve(self.speaker)
@@ -99,6 +105,7 @@ class Config:
         checkpoints = [c.path for c in CheckpointStore().list()]
         default_checkpoint = checkpoints[0] if checkpoints else "checkpoint.pt"
 
+        self.engine = "hebtts"
         self.checkpoint = default_checkpoint
         self.speaker = SpeakerStore.default()
         self.text = DEFAULT_TEXT
@@ -125,11 +132,17 @@ class Config:
         self.cfg_scale = 2.0
         self.vq_score = 0.78
         self.emotions = [0.0] * 8
+        self.min_p = 0.1
+        self.top_p = 0.0
+        self.linear = 0.0
+        self.confidence = 0.0
+        self.quadratic = 0.0
         return self
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts configuration fields to a standard dictionary."""
         return {
+            "engine": str(self.engine),
             "checkpoint": self.checkpoint,
             "speaker": self.speaker.to_dict(embed_data=True) if self.speaker else {},
             "text": self.text,
@@ -156,10 +169,17 @@ class Config:
             "cfg_scale": float(self.cfg_scale),
             "vq_score": float(self.vq_score),
             "emotions": [float(x) for x in self.emotions],
+            "min_p": float(self.min_p),
+            "top_p": float(self.top_p),
+            "linear": float(self.linear),
+            "confidence": float(self.confidence),
+            "quadratic": float(self.quadratic),
         }
 
     def _apply_dict(self, data: Dict[str, Any]) -> "Config":
         """Updates configuration fields in-place from a dictionary."""
+        if "engine" in data and data["engine"] is not None:
+            self.engine = str(data["engine"])
         if "checkpoint" in data and data["checkpoint"] is not None:
             self.checkpoint = str(data["checkpoint"])
         if "speaker" in data and data["speaker"] is not None:
@@ -211,6 +231,16 @@ class Config:
             self.vq_score = float(data["vq_score"])
         if "emotions" in data and data["emotions"] is not None:
             self.emotions = [float(x) for x in data["emotions"]]
+        if "min_p" in data and data["min_p"] is not None:
+            self.min_p = float(data["min_p"])
+        if "top_p" in data and data["top_p"] is not None:
+            self.top_p = float(data["top_p"])
+        if "linear" in data and data["linear"] is not None:
+            self.linear = float(data["linear"])
+        if "confidence" in data and data["confidence"] is not None:
+            self.confidence = float(data["confidence"])
+        if "quadratic" in data and data["quadratic"] is not None:
+            self.quadratic = float(data["quadratic"])
         return self
 
     from_dict = _FromDictDescriptor()

@@ -91,6 +91,7 @@ def test_enums():
 
 def test_config_defaults():
     cfg = Config()
+    assert cfg.engine == "hebtts"
     assert cfg.checkpoint == "checkpoint.pt"
     assert isinstance(cfg.speaker, Speaker)
     assert isinstance(cfg.speaker, LocalSpeaker)
@@ -120,6 +121,11 @@ def test_config_defaults():
     assert cfg.cfg_scale == 2.0
     assert cfg.vq_score == 0.78
     assert cfg.emotions == [0.0] * 8
+    assert cfg.min_p == 0.1
+    assert cfg.top_p == 0.0
+    assert cfg.linear == 0.0
+    assert cfg.confidence == 0.0
+    assert cfg.quadratic == 0.0
     print("[PASS] Config defaults verified.")
 
 
@@ -143,8 +149,14 @@ def test_config_dicts():
         cfg_scale=3.0,
         vq_score=0.82,
         emotions=[0.1] * 8,
+        min_p=0.15,
+        top_p=0.85,
+        linear=0.5,
+        confidence=0.4,
+        quadratic=0.1,
     )
     d = cfg.to_dict()
+    assert d["engine"] == "hebtts"
     assert d["temperature"] == 1.2
     assert d["mbd"] == 1
     assert d["top_k"] == 80
@@ -166,6 +178,11 @@ def test_config_dicts():
     assert d["cfg_scale"] == 3.0
     assert d["vq_score"] == 0.82
     assert d["emotions"] == [0.1] * 8
+    assert d["min_p"] == 0.15
+    assert d["top_p"] == 0.85
+    assert d["linear"] == 0.5
+    assert d["confidence"] == 0.4
+    assert d["quadratic"] == 0.1
     assert "speaker_mode" not in d
     assert "clone" not in d
     assert "speaker" in d

@@ -203,11 +203,11 @@ class ZonosEngine(VoiceEngine):
         # For Zonos, optimal autoregressive sampling uses min_p=0.1 (or top_k=0 if using VALL-E's top_k=50 default)
         cfg_top_k = getattr(config, "top_k", 50)
         top_k = int(kwargs.get("top_k", 0 if cfg_top_k == 50 else cfg_top_k))
-        top_p = float(kwargs.get("top_p", 0.0))
-        min_p = float(kwargs.get("min_p", 0.1 if top_k == 0 else 0.0))
-        linear = float(kwargs.get("linear", 0.0))
-        confidence = float(kwargs.get("confidence", 0.0))
-        quadratic = float(kwargs.get("quadratic", 0.0))
+        top_p = float(kwargs.get("top_p", getattr(config, "top_p", 0.0)))
+        min_p = float(kwargs.get("min_p", getattr(config, "min_p", 0.1 if top_k == 0 else 0.0)))
+        linear = float(kwargs.get("linear", getattr(config, "linear", 0.0)))
+        confidence = float(kwargs.get("confidence", getattr(config, "confidence", 0.0)))
+        quadratic = float(kwargs.get("quadratic", getattr(config, "quadratic", 0.0)))
         max_new_tokens = int(kwargs.get("max_new_tokens", 86 * 30))
 
         sampling_params = dict(
