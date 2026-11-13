@@ -1,6 +1,10 @@
+import sys
 from typing import Any, Callable, Dict, List, Optional, Type, Union
-from .base import VoiceEngine
+from .VoiceEngine import VoiceEngine
 from .heb_tts import HebTTSEngine
+
+# Backward-compatibility alias for legacy imports
+sys.modules.setdefault("engine.base", sys.modules[__name__])
 
 
 def _zonos_loader(**kwargs: Any) -> VoiceEngine:

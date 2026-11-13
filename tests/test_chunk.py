@@ -25,7 +25,7 @@ from config import (
     Chunk,
     ChunkList,
 )
-from engine.base import VoiceEngine
+from engine.VoiceEngine import VoiceEngine
 
 
 def test_chunk_status_int_enum():

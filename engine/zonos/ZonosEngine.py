@@ -15,7 +15,7 @@ if str(_ZONOS_SRC) not in sys.path:
     sys.path.insert(0, str(_ZONOS_SRC))
 
 from config import Config, SeedMode, Speaker, SpeakerSample
-from ..base import VoiceEngine
+from ..VoiceEngine import VoiceEngine
 
 
 class ZonosEngine(VoiceEngine):

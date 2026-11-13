@@ -11,7 +11,7 @@ from engine.heb_tts.valle.data import AudioTokenizer, tokenize_audio
 from engine.heb_tts.valle.data.collation import get_text_token_collater
 from engine.heb_tts.valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from engine.heb_tts.valle.models import get_model
-from ..base import VoiceEngine
+from ..VoiceEngine import VoiceEngine
 
 
 class HebTTSEngine(VoiceEngine):

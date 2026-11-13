@@ -312,7 +312,7 @@ class ChunkList:
         max_chunk_size: Optional[int] = None,
     ) -> "ChunkList":
         """Constructs a ChunkList from parsed MKI blocks [(Config, text)]."""
-        from engine.base import VoiceEngine
+        from engine.VoiceEngine import VoiceEngine
 
         effective_chunk_size = (
             max_chunk_size
