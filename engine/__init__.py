@@ -1,6 +1,7 @@
 import sys
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 from .EngineInfo import EngineInfo
+from .EnginePanel import EnginePanel, EngineUI
 from .VoiceEngine import VoiceEngine
 from .heb_tts import HebTTSEngine
 
@@ -118,6 +119,8 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "EngineInfo",
+    "EnginePanel",
+    "EngineUI",
     "VoiceEngine",
     "HebTTSEngine",
     "ZonosEngine",

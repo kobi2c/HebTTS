@@ -283,3 +283,8 @@ class HebTTSEngine(VoiceEngine):
             wav_np = np.asarray(seg_tensor)
 
         return np.asarray(wav_np, dtype=np.float32)
+
+    def create_panel(self) -> Any:
+        """Constructs and returns the Gradio EnginePanel for HebTTS."""
+        from .HebTTSPanel import HebTTSPanel
+        return HebTTSPanel()

@@ -291,6 +291,11 @@ class VoiceEngine(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def create_panel(self) -> Any:
+        """Constructs and returns the Gradio EnginePanel for this engine."""
+        raise NotImplementedError
+
     # --- Template Method: create ---
 
     def create(

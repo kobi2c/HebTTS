@@ -155,13 +155,13 @@ def test_sampler_run_execution():
         assert (tmp_path / "both_out.mp3").exists()
 
         # 4. Run with custom pluggable engine
-        from engine import VoiceEngine
+        from engine import VoiceEngine, EngineInfo
         class MockCustomEngine(VoiceEngine):
+            info = EngineInfo(id="mock_custom", name="Mock Custom Engine", sample_rate=16000)
             def synthesize_chunk(self, *args, **kwargs):
                 return np.zeros(16000, dtype=np.float32)
-            @property
-            def sample_rate(self):
-                return 16000
+            def create_panel(self):
+                pass
 
         custom_eng = MockCustomEngine()
         s_custom = SampleMaker(engine=custom_eng, checkpoint=str(dummy_cp), speaker="1", text="בדיקת מנוע", output=tmp_path / "cust.wav")

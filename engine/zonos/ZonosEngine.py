@@ -302,3 +302,8 @@ class ZonosEngine(VoiceEngine):
 
         self._last_tokens_str = f"Zonos [{target_model}]"
         return np.asarray(out_np, dtype=np.float32)
+
+    def create_panel(self) -> Any:
+        """Constructs and returns the Gradio EnginePanel for Zonos."""
+        from .ZonosPanel import ZonosPanel
+        return ZonosPanel()

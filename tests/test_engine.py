@@ -54,6 +54,9 @@ class DummyBeepEngine(VoiceEngine):
     def last_tokens_str(self) -> str:
         return "dummy: 10 -> 20 (+10)"
 
+    def create_panel(self) -> Any:
+        return MagicMock()
+
     def synthesize_chunk(
         self,
         text: str,
@@ -114,6 +117,7 @@ def test_voice_engine_abc():
     dummy.unload_model()
     dummy.clear_cache()
     dummy.clear_last_tokens()
+    assert dummy.create_panel() is not None
 
     print("[PASS] VoiceEngine ABC contract verified.")
 

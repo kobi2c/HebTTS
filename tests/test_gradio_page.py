@@ -192,6 +192,28 @@ def test_gradio_page_build_interface():
     print("[PASS] GradioPage.build_interface and panels verified.")
 
 
+def test_engine_panel_modular_structure():
+    from engine import EnginePanel, EngineUI, HebTTSEngine, ZonosEngine
+    from engine.heb_tts.HebTTSPanel import HebTTSPanel as ModularHebTTSPanel
+    from engine.zonos.ZonosPanel import ZonosPanel as ModularZonosPanel
+
+    assert EnginePanel is EngineUI
+    assert issubclass(ModularHebTTSPanel, EnginePanel)
+    assert issubclass(ModularZonosPanel, EnginePanel)
+
+    heb_eng = HebTTSEngine()
+    panel1 = heb_eng.create_panel()
+    assert isinstance(panel1, EnginePanel)
+    assert isinstance(panel1, ModularHebTTSPanel)
+
+    zonos_eng = ZonosEngine()
+    panel2 = zonos_eng.create_panel()
+    assert isinstance(panel2, EnginePanel)
+    assert isinstance(panel2, ModularZonosPanel)
+
+    print("[PASS] EnginePanel modular structure and engine.create_panel() verified.")
+
+
 def test_table_printing():
     s = SampleMaker.__new__(SampleMaker)
     s.checkpoints = CheckpointStore()
@@ -220,5 +242,6 @@ if __name__ == "__main__":
     test_generate_audio_strict_config()
     test_gradio_page_config_helpers()
     test_gradio_page_build_interface()
+    test_engine_panel_modular_structure()
     test_table_printing()
     print("\n🎉 ALL TESTS IN tests/test_gradio_page.py PASSED SUCCESSFULLY!")
