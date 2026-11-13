@@ -426,6 +426,30 @@ def test_voice_maker_max_chunk_size():
     print("[PASS] VoiceMaker max_chunk_size inheritance and CLI override verified.")
 
 
+def test_voice_maker_auto_detect_zonos_from_mki():
+    from config import ChunkList
+    from engine import ZonosEngine, get_engine
+    vm = VoiceMaker()
+    assert vm._explicit_engine is False
+    assert vm.engine.info.id == "hebtts"
+
+    lines = Path("samples/sample.zonos.mki").read_text(encoding="utf-8").splitlines()
+    blocks = vm.parse_mki(lines, Config())
+    chunks = ChunkList.from_blocks(blocks)
+    target_indices, _ = chunks.filter_targets(None, False)
+    target_chunk = next((c for c in chunks if c.index in target_indices), None)
+    assert target_chunk is not None
+    assert target_chunk.config.engine == "zonos"
+
+    # Simulate run step 3
+    if not vm._explicit_engine and target_chunk.config.engine and target_chunk.config.engine != vm.engine.info.id:
+        vm.engine = get_engine(target_chunk.config.engine)
+
+    assert vm.engine.info.id == "zonos"
+    assert isinstance(vm.engine, ZonosEngine)
+    print("[PASS] VoiceMaker auto-detection of zonos engine from .mki verified.")
+
+
 if __name__ == "__main__":
     test_mki_parsing_with_config()
     test_voice_maker_args()
@@ -434,4 +458,5 @@ if __name__ == "__main__":
     test_voice_maker_table_progress_output()
     test_voice_maker_chain_speaker_execution()
     test_voice_maker_max_chunk_size()
+    test_voice_maker_auto_detect_zonos_from_mki()
     print("\n🎉 ALL TESTS IN tests/test_make_voice.py PASSED SUCCESSFULLY!")

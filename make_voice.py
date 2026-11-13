@@ -141,6 +141,7 @@ class VoiceMaker:
         chain_speaker: Optional[ChainMode] = None,
     ) -> None:
         self.engine: VoiceEngine = get_engine(engine)
+        self._explicit_engine: bool = (engine is not None)
         self.input: Optional[Union[str, Path]] = input
         self.base_config: Optional[str] = base_config
         self.output_dir: Optional[Union[str, Path]] = output_dir
@@ -203,6 +204,7 @@ class VoiceMaker:
 
         if hasattr(parsed, "engine") and parsed.engine:
             self.engine = get_engine(parsed.engine)
+            self._explicit_engine = True
 
         return parsed
 
@@ -289,6 +291,8 @@ class VoiceMaker:
         prompt_sample: SpeakerSample,
     ) -> np.ndarray:
         """Synthesizes a single chunk using the configured VoiceEngine."""
+        if not self._explicit_engine and config.engine and config.engine != self.engine.info.id:
+            self.engine = get_engine(config.engine)
         return self.engine.create(
             speaker=config.speaker,
             sample=prompt_sample,
@@ -344,7 +348,14 @@ class VoiceMaker:
             target_indices, _ = chunks.filter_targets(active_range, self.range_only)
             target_chunk = next((c for c in chunks if c.index in target_indices), None)
             if target_chunk:
-                self.engine.load_model(target_chunk.config.checkpoint, mbd=target_chunk.config.mbd)
+                if not self._explicit_engine and target_chunk.config.engine and target_chunk.config.engine != self.engine.info.id:
+                    self.engine = get_engine(target_chunk.config.engine)
+                if self.engine.info.id == "zonos":
+                    self.engine.load_model(target_chunk.config.model_choice)
+                elif self.engine.info.id == "hebtts":
+                    self.engine.load_model(target_chunk.config.checkpoint, mbd=target_chunk.config.mbd)
+                else:
+                    self.engine.load_model()
 
         # 4. Process or generate audio chunk by chunk
         chunks.process(
