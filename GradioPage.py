@@ -599,20 +599,30 @@ class GradioPage:
         return None, ""
 
     def get_engine_badge_markdown(self, engine_id: str) -> str:
-        """Returns rich formatted badge markdown describing the active engine."""
-        if engine_id == "zonos":
+        """Returns rich formatted badge markdown describing the active engine using engine metadata."""
+        try:
+            eng = self._engines.get(engine_id) or get_engine(engine_id)
+            info = eng.info()
             return (
-                f"⚡ **Active Engine**: `Zonos (Zyphra)` &nbsp;|&nbsp; "
-                f"🔊 **Sample Rate**: `44,100 Hz` &nbsp;|&nbsp; "
-                f"🧠 **Architecture**: Continuous Hybrid Transformer & DAC Codec &nbsp;|&nbsp; "
+                f"⚡ **Active Engine**: `{info['name']}` &nbsp;|&nbsp; "
+                f"🔊 **Sample Rate**: `{info['sample_rate']:,} Hz` &nbsp;|&nbsp; "
+                f"🧠 **Architecture**: {info['description']} &nbsp;|&nbsp; "
+                f"💻 **Device**: `{info['device_name']}` (`{info['device']}`)"
+            )
+        except Exception:
+            if engine_id == "zonos":
+                return (
+                    f"⚡ **Active Engine**: `Zonos (Zyphra)` &nbsp;|&nbsp; "
+                    f"🔊 **Sample Rate**: `44,100 Hz` &nbsp;|&nbsp; "
+                    f"🧠 **Architecture**: Continuous Hybrid Transformer & DAC Codec &nbsp;|&nbsp; "
+                    f"💻 **Device**: `{self.device_name}` (`{self.device}`)"
+                )
+            return (
+                f"⚡ **Active Engine**: `HebTTS (VALL-E)` &nbsp;|&nbsp; "
+                f"🔊 **Sample Rate**: `24,000 Hz` &nbsp;|&nbsp; "
+                f"🧠 **Architecture**: Neural Codec LM (VALL-E) & EnCodec &nbsp;|&nbsp; "
                 f"💻 **Device**: `{self.device_name}` (`{self.device}`)"
             )
-        return (
-            f"⚡ **Active Engine**: `HebTTS (VALL-E)` &nbsp;|&nbsp; "
-            f"🔊 **Sample Rate**: `24,000 Hz` &nbsp;|&nbsp; "
-            f"🧠 **Architecture**: Neural Codec LM (VALL-E) & EnCodec &nbsp;|&nbsp; "
-            f"💻 **Device**: `{self.device_name}` (`{self.device}`)"
-        )
 
     def update_config_from_ui(self, *args: Any, **kwargs: Any) -> Config:
         """Updates self.config from UI component values or kwargs."""

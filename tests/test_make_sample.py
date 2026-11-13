@@ -157,7 +157,7 @@ def test_sampler_run_execution():
         # 4. Run with custom pluggable engine
         from engine import VoiceEngine
         class MockCustomEngine(VoiceEngine):
-            def create(self, *args, **kwargs):
+            def synthesize_chunk(self, *args, **kwargs):
                 return np.zeros(16000, dtype=np.float32)
             @property
             def sample_rate(self):

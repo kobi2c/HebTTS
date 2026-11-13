@@ -1,7 +1,7 @@
 import os
 import random
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -19,6 +19,12 @@ class HebTTSEngine(VoiceEngine):
     Self-contained Hebrew VALL-E speech synthesis engine.
     Caches model weights, vocoders, and prompt audio embeddings for optimal performance.
     """
+
+    engine_id: ClassVar[str] = "hebtts"
+    name: ClassVar[str] = "HebTTS (VALL-E)"
+    description: ClassVar[str] = "Hebrew VALL-E neural codec language model. Fast autoregressive synthesis at 24 kHz."
+    default_sample_rate: ClassVar[int] = 24000
+    supported_languages: ClassVar[List[str]] = ["he"]
 
     PACKAGE_DIR = Path(__file__).resolve().parent
     DEFAULT_TOKENS_FILE = str(PACKAGE_DIR / "tokenizer" / "unique_words_tokens_all.k2symbols")
@@ -69,14 +75,41 @@ class HebTTSEngine(VoiceEngine):
         return self._device_name
 
     @property
-    def sample_rate(self) -> int:
-        """HebTTS native sampling rate is 24000 Hz."""
-        return 24000
+    def is_loaded(self) -> bool:
+        """Returns True if the VALL-E model is loaded in memory."""
+        return self.model is not None
+
+    @property
+    def loaded_checkpoint(self) -> Optional[str]:
+        """Returns the path of the currently loaded checkpoint."""
+        return self.cached_checkpoint
 
     @property
     def last_tokens_str(self) -> Optional[str]:
         """Token statistics from the last synthesis."""
         return self._last_tokens_str
+
+    def clear_last_tokens(self) -> None:
+        """Resets token usage stats."""
+        self._last_tokens_str = None
+
+    def unload_model(self) -> None:
+        """Unloads model weights and vocoder from memory and clears GPU cache."""
+        self.model = None
+        self.audio_tokenizer = None
+        self.text_collater = None
+        self.alef_bert_tokenizer = None
+        self.cached_checkpoint = None
+        self.cached_mbd = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def clear_cache(self) -> None:
+        """Clears cached speaker audio prompts and token stats."""
+        self._cached_prompt_audio = None
+        self._cached_prompt_text = None
+        self._cached_audio_prompts = None
+        self._last_tokens_str = None
 
     def load_model(
         self,
@@ -124,35 +157,88 @@ class HebTTSEngine(VoiceEngine):
 
         return self.model, self.audio_tokenizer, self.text_collater, self.alef_bert_tokenizer
 
-    def synthesize_line(
+    def preprocess_text(self, text: str, config: Optional[Config] = None) -> str:
+        """Converts Hebrew vocalized words into phonetic Ktiv-Male if nikud_mode is enabled."""
+        cfg = config or Config()
+        if cfg.nikud_mode:
+            return self.nikud_maker.convert(text)
+        return text
+
+    def prepare_speaker(
+        self,
+        speaker: Speaker,
+        sample: Optional[SpeakerSample] = None,
+        config: Optional[Config] = None,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Tokenizes and caches speaker audio prompts prior to chunk synthesis."""
+        resolved_sample = sample if sample is not None else speaker.sample()
+        prompt_audio = resolved_sample.path
+        prompt_text = resolved_sample.text
+        cfg = config or Config()
+        if cfg.nikud_mode:
+            prompt_text = self.nikud_maker.convert(prompt_text)
+
+        # Ensure model and tokenizers are initialized
+        model_tuple = self.load_model(cfg.checkpoint, cfg.mbd)
+        if isinstance(model_tuple, (tuple, list)) and len(model_tuple) >= 4:
+            if self.model is None and model_tuple[0] is not None:
+                self.model = model_tuple[0]
+            if self.audio_tokenizer is None and model_tuple[1] is not None:
+                self.audio_tokenizer = model_tuple[1]
+            if self.text_collater is None and model_tuple[2] is not None:
+                self.text_collater = model_tuple[2]
+            if self.alef_bert_tokenizer is None and model_tuple[3] is not None:
+                self.alef_bert_tokenizer = model_tuple[3]
+
+        if self._cached_prompt_audio != prompt_audio or self._cached_audio_prompts is None:
+            encoded_frames = tokenize_audio(self.audio_tokenizer, prompt_audio)
+            self._cached_audio_prompts = (
+                torch.concat([encoded_frames[0][0]], dim=-1).transpose(2, 1).to(self.device)
+            )
+            self._cached_prompt_audio = prompt_audio
+            self._cached_prompt_text = prompt_text
+
+        return self._cached_audio_prompts
+
+    def synthesize_chunk(
         self,
         text: str,
-        audio_prompts: torch.Tensor,
-        prompt_text: str,
-        top_k: int = 50,
-        temperature: float = 1.0,
-        mbd: bool = False,
-        nikud_mode: bool = True,
-    ) -> torch.Tensor:
-        """Synthesizes a single line of Hebrew text using the loaded model and tokenizers."""
-        if nikud_mode:
-            text = self.nikud_maker.convert(text)
-            prompt_text = self.nikud_maker.convert(prompt_text)
+        speaker: Speaker,
+        sample: Optional[SpeakerSample] = None,
+        config: Optional[Config] = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """
+        Synthesizes a single chunk of Hebrew text using the loaded model and vocoders.
+        Returns a 1D float32 numpy audio waveform.
+        """
+        cfg = config or Config()
+        audio_prompts = self.prepare_speaker(speaker, sample, config=cfg)
+        prompt_text = self._cached_prompt_text or (sample.text if sample else speaker.sample().text)
+
+        if cfg.nikud_mode:
+            text = self.preprocess_text(text, cfg)
+            prompt_text = self.preprocess_text(prompt_text, cfg)
 
         text_without_space = [replace_chars(f"{prompt_text} {text}").strip().replace(" ", "_")]
         tokens = self.alef_bert_tokenizer._tokenize(text_without_space)
         prompt_text_without_space = [replace_chars(f"{prompt_text}").strip().replace(" ", "_")]
         prompt_tokens = self.alef_bert_tokenizer._tokenize(prompt_text_without_space)
 
-        # Filter out any unsupported characters/tokens not present in the vocabulary
+        # Filter out unsupported tokens
         tokens = [t for t in tokens if t in self.text_collater.token2idx]
         prompt_tokens = [t for t in prompt_tokens if t in self.text_collater.token2idx]
 
         if not tokens:
-            return torch.zeros((1, 0))
+            return np.zeros(0, dtype=np.float32)
 
         text_tokens, text_tokens_lens = self.text_collater([tokens])
         _, enroll_x_lens = self.text_collater([prompt_tokens])
+
+        top_k = int(kwargs.get("top_k", cfg.top_k))
+        temperature = float(kwargs.get("temperature", cfg.temperature))
+        mbd = bool(int(kwargs.get("mbd", cfg.mbd)))
 
         with torch.no_grad():
             encoded_frames = self.model.inference(
@@ -165,8 +251,7 @@ class HebTTSEngine(VoiceEngine):
             )
 
             is_cuda = "cuda" in str(self.device).lower()
-            mbd_bool = bool(int(mbd))
-            if mbd_bool and getattr(self.audio_tokenizer, "mbd", None) is not None:
+            if mbd and getattr(self.audio_tokenizer, "mbd", None) is not None:
                 if is_cuda and torch.cuda.is_available():
                     self.model.to("cpu")
                     torch.cuda.empty_cache()
@@ -176,126 +261,22 @@ class HebTTSEngine(VoiceEngine):
             else:
                 samples = self.audio_tokenizer.decode([(encoded_frames.transpose(2, 1), None)])
 
-        return samples[0].cpu()
-
-    def addSeed(self, seed: Optional[int] = None) -> int:
-        """
-        Configures the random seed for PyTorch and Python RNG.
-        If seed is None, generates a random non-negative integer.
-        Returns the resolved seed.
-        """
-        if seed is None:
-            seed = random.randint(0, 2**31 - 1)
-        seed = int(seed)
-        torch.manual_seed(seed)
-        return seed
-
-    def prepare_text(
-        self,
-        text: Union[str, List[str]],
-        config: Optional[Config] = None,
-    ) -> List[str]:
-        """
-        Prepares raw text into non-empty, stripped lines with Hebrew Nikud converted
-        into phonetic Ktiv-Male when nikud_mode is enabled.
-        """
-        lines = super().prepare_text(text, config)
-        cfg = config or Config()
-        if cfg.nikud_mode:
-            lines = [self.nikud_maker.convert(line) for line in lines]
-        return lines
-
-    def create(
-        self,
-        speaker: Speaker,
-        sample: Optional[SpeakerSample] = None,
-        config: Optional[Config] = None,
-        text: Union[str, List[str]] = "",
-        progress_callback: Optional[Callable[[int, int, str], None]] = None,
-        **kwargs: Any,
-    ) -> np.ndarray:
-        """
-        Synthesizes Hebrew text (single or multi-line) into a 1D float32 audio waveform.
-        """
-        cfg = config or Config()
-
-        # 1. Resolve prompt audio and text
-        resolved_sample = sample if sample is not None else speaker.sample()
-        prompt_audio = resolved_sample.path
-        prompt_text = resolved_sample.text
-        if cfg.nikud_mode:
-            prompt_text = self.nikud_maker.convert(prompt_text)
-
-        # 2. Configure RNG seed
-        if cfg.seed_mode == SeedMode.Enabled:
-            resolved_seed = self.addSeed(None)
-        else:
-            resolved_seed = self.addSeed(cfg.seed)
-        cfg.seed = resolved_seed
-
-        # 3. Load model, vocoder, and tokenizers
-        model, audio_tokenizer, text_collater, alef_bert_tokenizer = self.load_model(
-            cfg.checkpoint, cfg.mbd
-        )
-        model.verbose = False
-        model.last_eos = None
-
-        # 4. Cache audio prompt frames if reference changed
-        if self._cached_prompt_audio != prompt_audio or self._cached_audio_prompts is None:
-            encoded_frames = tokenize_audio(audio_tokenizer, prompt_audio)
-            self._cached_audio_prompts = (
-                torch.concat([encoded_frames[0][0]], dim=-1).transpose(2, 1).to(self.device)
-            )
-            self._cached_prompt_audio = prompt_audio
-            self._cached_prompt_text = prompt_text
-
-        # 5. Prepare text lines
-        lines = self.prepare_text(text, cfg)
-        if not lines:
-            self._last_tokens_str = None
-            return np.zeros(0, dtype=np.float32)
-
-        pause_sec = float(cfg.pause_duration) if hasattr(cfg, "pause_duration") else 0.3
-        silence = torch.zeros((1, int(self.sample_rate * pause_sec)))
-        segments: List[torch.Tensor] = []
-
-        for i, line in enumerate(lines):
-            if progress_callback is not None:
-                progress_callback(i, len(lines), f"Synthesizing line {i + 1}/{len(lines)}...")
-
-            seg = self.synthesize_line(
-                text=line,
-                audio_prompts=self._cached_audio_prompts,
-                prompt_text=self._cached_prompt_text or prompt_text,
-                top_k=int(cfg.top_k),
-                temperature=float(cfg.temperature),
-                mbd=bool(cfg.mbd),
-                nikud_mode=False,
-            )
-            if seg.shape[-1] > 0:
-                segments.append(seg)
-                if i < len(lines) - 1 and pause_sec > 0:
-                    segments.append(silence)
-
-        if not segments:
-            self._last_tokens_str = None
-            return np.zeros(0, dtype=np.float32)
-
-        full_audio = torch.cat(segments, dim=-1)
-        audio_np = full_audio.squeeze().cpu().numpy()
-
-        # 6. Apply post-processing via base post_create
-        audio_np = self.post_create(audio_np, cfg)
-
-        # 7. Record token usage statistics
-        eos = getattr(model, "last_eos", None)
+        # Record token usage statistics
+        eos = getattr(self.model, "last_eos", None)
         if eos and isinstance(eos, (tuple, list)) and len(eos) >= 2:
             p_len, tot_len = eos[0], eos[1]
             diff = tot_len - p_len
             self._last_tokens_str = f"{p_len} -> {tot_len} (+{diff})"
+
+        seg_tensor = samples[0].cpu()
+        if hasattr(seg_tensor, "shape") and seg_tensor.shape[-1] == 0:
+            return np.zeros(0, dtype=np.float32)
+
+        if hasattr(seg_tensor, "squeeze"):
+            seg_tensor = seg_tensor.squeeze()
+        if hasattr(seg_tensor, "numpy"):
+            wav_np = seg_tensor.numpy()
         else:
-            self._last_tokens_str = None
+            wav_np = np.asarray(seg_tensor)
 
-        return audio_np
-
-        return audio_np
+        return np.asarray(wav_np, dtype=np.float32)

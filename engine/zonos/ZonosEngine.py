@@ -2,7 +2,7 @@ import os
 import random
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import soundfile as sf
@@ -24,6 +24,12 @@ class ZonosEngine(VoiceEngine):
     Inherits from VoiceEngine, providing model loading, speaker embedding caching,
     conditioning dictionary assembly, and post-creation audio processing.
     """
+
+    engine_id: ClassVar[str] = "zonos"
+    name: ClassVar[str] = "Zonos (Zyphra)"
+    description: ClassVar[str] = "Continuous-space hybrid architecture with DAC neural audio codec. Expressive synthesis at 44.1 kHz."
+    default_sample_rate: ClassVar[int] = 44100
+    supported_languages: ClassVar[List[str]] = ["he", "en-us", "en-gb", "fr-fr", "de", "es", "cmn", "ja"]
 
     DEFAULT_MODEL_CHOICE: str = "notmax123/Zonos-Hebrew"
     DEFAULT_LANGUAGE: str = "he"
@@ -64,6 +70,16 @@ class ZonosEngine(VoiceEngine):
         return self._device_name
 
     @property
+    def is_loaded(self) -> bool:
+        """Returns True if the Zonos model is currently loaded in memory."""
+        return self.model is not None
+
+    @property
+    def loaded_checkpoint(self) -> Optional[str]:
+        """Returns the identifier of the currently loaded model choice."""
+        return self.cached_model_choice
+
+    @property
     def sample_rate(self) -> int:
         """Zonos native DAC autoencoder sampling rate is 44100 Hz."""
         return self.SAMPLE_RATE
@@ -72,6 +88,23 @@ class ZonosEngine(VoiceEngine):
     def last_tokens_str(self) -> Optional[str]:
         """Summary description from the last synthesis."""
         return self._last_tokens_str
+
+    def clear_last_tokens(self) -> None:
+        """Resets token usage stats."""
+        self._last_tokens_str = None
+
+    def unload_model(self) -> None:
+        """Unloads model weights from memory and clears accelerator caches."""
+        self.model = None
+        self.cached_model_choice = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def clear_cache(self) -> None:
+        """Clears cached speaker embeddings and state."""
+        self._cached_speaker_path = None
+        self._cached_speaker_embedding = None
+        self._last_tokens_str = None
 
     def load_model(
         self,
@@ -134,11 +167,22 @@ class ZonosEngine(VoiceEngine):
         self._cached_speaker_embedding = spk_emb
         return spk_emb
 
+    def prepare_speaker(
+        self,
+        speaker: Speaker,
+        sample: Optional[SpeakerSample] = None,
+        config: Optional[Config] = None,
+        **kwargs: Any,
+    ) -> Optional[torch.Tensor]:
+        """Prepares speaker embedding tensor prior to chunk synthesis."""
+        return self.get_speaker_embedding(speaker, sample)
+
     def synthesize_chunk(
         self,
         text: str,
-        speaker_embedding: Optional[torch.Tensor],
-        config: Config,
+        speaker: Optional[Union[Speaker, torch.Tensor]] = None,
+        sample: Optional[SpeakerSample] = None,
+        config: Optional[Config] = None,
         progress_callback: Optional[Callable[[torch.Tensor, int, int], bool]] = None,
         **kwargs: Any,
     ) -> np.ndarray:
@@ -153,18 +197,28 @@ class ZonosEngine(VoiceEngine):
                 "Ensure Zonos dependencies (transformers, etc.) are installed."
             ) from e
 
-        target_model = kwargs.get("model_choice", config.model_choice)
+        cfg = config or Config()
+
+        # Resolve speaker embedding tensor
+        if isinstance(speaker, Speaker):
+            speaker_embedding = self.prepare_speaker(speaker, sample, config=cfg)
+        elif speaker is not None and (hasattr(speaker, "dim") or type(speaker).__name__ == "Tensor"):
+            speaker_embedding = speaker
+        else:
+            speaker_embedding = kwargs.get("speaker_embedding", self._cached_speaker_embedding)
+
+        target_model = kwargs.get("model_choice", cfg.model_choice)
         model = self.load_model(target_model)
 
-        language = kwargs.get("language", config.language)
-        fmax = float(kwargs.get("fmax", config.fmax))
-        pitch_std = float(kwargs.get("pitch_std", config.pitch_std))
-        speaking_rate = float(kwargs.get("speaking_rate", config.speaking_rate))
-        dnsmos_ovrl = float(kwargs.get("dnsmos_ovrl", config.dnsmos_ovrl))
-        speaker_noised = bool(kwargs.get("speaker_noised", config.speaker_noised))
-        cfg_scale = float(kwargs.get("cfg_scale", config.cfg_scale))
-        vq_val = float(kwargs.get("vq_score", config.vq_score))
-        emotions_raw = kwargs.get("emotions", config.emotions)
+        language = kwargs.get("language", cfg.language)
+        fmax = float(kwargs.get("fmax", cfg.fmax))
+        pitch_std = float(kwargs.get("pitch_std", cfg.pitch_std))
+        speaking_rate = float(kwargs.get("speaking_rate", cfg.speaking_rate))
+        dnsmos_ovrl = float(kwargs.get("dnsmos_ovrl", cfg.dnsmos_ovrl))
+        speaker_noised = bool(kwargs.get("speaker_noised", cfg.speaker_noised))
+        cfg_scale = float(kwargs.get("cfg_scale", cfg.cfg_scale))
+        vq_val = float(kwargs.get("vq_score", cfg.vq_score))
+        emotions_raw = kwargs.get("emotions", cfg.emotions)
 
         emotion_vals = [float(x) for x in emotions_raw] if emotions_raw else []
         emotion_sum = sum(emotion_vals)
@@ -201,13 +255,13 @@ class ZonosEngine(VoiceEngine):
         conditioning = model.prepare_conditioning(cond_dict)
 
         # For Zonos, optimal autoregressive sampling uses min_p=0.1 (or top_k=0 if using VALL-E's top_k=50 default)
-        cfg_top_k = getattr(config, "top_k", 50)
+        cfg_top_k = getattr(cfg, "top_k", 50)
         top_k = int(kwargs.get("top_k", 0 if cfg_top_k == 50 else cfg_top_k))
-        top_p = float(kwargs.get("top_p", getattr(config, "top_p", 0.0)))
-        min_p = float(kwargs.get("min_p", getattr(config, "min_p", 0.1 if top_k == 0 else 0.0)))
-        linear = float(kwargs.get("linear", getattr(config, "linear", 0.0)))
-        confidence = float(kwargs.get("confidence", getattr(config, "confidence", 0.0)))
-        quadratic = float(kwargs.get("quadratic", getattr(config, "quadratic", 0.0)))
+        top_p = float(kwargs.get("top_p", getattr(cfg, "top_p", 0.0)))
+        min_p = float(kwargs.get("min_p", getattr(cfg, "min_p", 0.1 if top_k == 0 else 0.0)))
+        linear = float(kwargs.get("linear", getattr(cfg, "linear", 0.0)))
+        confidence = float(kwargs.get("confidence", getattr(cfg, "confidence", 0.0)))
+        quadratic = float(kwargs.get("quadratic", getattr(cfg, "quadratic", 0.0)))
         max_new_tokens = int(kwargs.get("max_new_tokens", 86 * 30))
 
         sampling_params = dict(
@@ -242,64 +296,6 @@ class ZonosEngine(VoiceEngine):
             out_np = wav_out.numpy()
         else:
             out_np = np.asarray(wav_out)
+
+        self._last_tokens_str = f"Zonos [{target_model}]"
         return np.asarray(out_np, dtype=np.float32)
-
-    def create(
-        self,
-        speaker: Speaker,
-        sample: Optional[SpeakerSample] = None,
-        config: Optional[Config] = None,
-        text: Union[str, List[str]] = "",
-        progress_callback: Optional[Callable[[int, int, str], None]] = None,
-        **kwargs: Any,
-    ) -> np.ndarray:
-        """
-        Synthesizes text into a 1D float32 audio waveform using Zonos.
-        """
-        cfg = config or Config()
-
-        # 1. Configure RNG seed
-        if cfg.seed_mode == SeedMode.Enabled:
-            resolved_seed = self.addSeed(None)
-        else:
-            resolved_seed = self.addSeed(cfg.seed)
-        cfg.seed = resolved_seed
-        torch.manual_seed(resolved_seed)
-
-        # 2. Extract / retrieve speaker embedding
-        speaker_emb = self.get_speaker_embedding(speaker, sample)
-
-        # 3. Prepare text lines
-        lines = self.prepare_text(text, cfg)
-        if not lines:
-            self._last_tokens_str = None
-            return np.zeros(0, dtype=np.float32)
-
-        pause_sec = float(cfg.pause_duration) if hasattr(cfg, "pause_duration") else 0.3
-        silence_samples = int(self.sample_rate * pause_sec)
-        silence = np.zeros(silence_samples, dtype=np.float32)
-        segments: List[np.ndarray] = []
-
-        total_steps = len(lines)
-        for i, line in enumerate(lines):
-            if progress_callback is not None:
-                progress_callback(i, total_steps, f"Synthesizing line {i + 1}/{total_steps}...")
-
-            audio_chunk = self.synthesize_chunk(
-                text=line,
-                speaker_embedding=speaker_emb,
-                config=cfg,
-                **kwargs,
-            )
-            if len(audio_chunk) > 0:
-                segments.append(audio_chunk)
-                if i < len(lines) - 1 and pause_sec > 0:
-                    segments.append(silence)
-
-        if not segments:
-            self._last_tokens_str = None
-            return np.zeros(0, dtype=np.float32)
-
-        combined = np.concatenate(segments) if len(segments) > 1 else segments[0]
-        self._last_tokens_str = f"Zonos [{cfg.model_choice}]: {len(lines)} line(s)"
-        return self.post_create(combined, cfg)

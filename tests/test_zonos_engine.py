@@ -13,7 +13,7 @@ import tests.setup_env  # noqa: F401
 import numpy as np
 import torch
 
-from config import Config, LocalSpeaker, SeedMode
+from config import Config, LocalSpeaker, SeedMode, SpeakerSample
 from engine import VoiceEngine, get_engine
 from engine.zonos import ZonosEngine
 
@@ -21,16 +21,32 @@ from engine.zonos import ZonosEngine
 def test_zonos_engine_contract():
     eng = ZonosEngine()
     assert isinstance(eng, VoiceEngine)
+    assert eng.engine_id == "zonos"
+    assert eng.name == "Zonos (Zyphra)"
     assert eng.sample_rate == 44100
     assert eng.default_model_choice == "notmax123/Zonos-Hebrew"
     assert eng.last_tokens_str is None
     assert eng.cached_model_choice is None
+    assert eng.is_loaded is False
+    assert eng.loaded_checkpoint is None
+
+    # Engine info dictionary
+    info = eng.info()
+    assert info["engine_id"] == "zonos"
+    assert info["name"] == "Zonos (Zyphra)"
+    assert info["sample_rate"] == 44100
+    assert "he" in info["supported_languages"]
 
     # Custom model choice & device
     eng_custom = ZonosEngine(model_choice="Zyphra/Zonos-v0.1-transformer", device="cpu")
     assert eng_custom.default_model_choice == "Zyphra/Zonos-v0.1-transformer"
     assert eng_custom.sample_rate == 44100
     assert "cpu" in str(eng_custom.device).lower()
+
+    # Lifecycle methods
+    eng.unload_model()
+    eng.clear_cache()
+    eng.clear_last_tokens()
 
     print("[PASS] ZonosEngine ABC contract and properties verified.")
 
@@ -92,7 +108,7 @@ def test_zonos_engine_create_flow():
         def on_prog(idx, tot, desc):
             progress_calls.append((idx, tot, desc))
 
-        # Synthesize 2 lines
+        # Synthesize 2 lines via template method create()
         text = "שלום עולם.\nזהו מודל זונוס."
         audio = eng.create(
             speaker=spk,
@@ -117,6 +133,16 @@ def test_zonos_engine_create_flow():
         # Empty text input returns empty array
         empty_res = eng.create(speaker=spk, config=cfg, text="")
         assert len(empty_res) == 0
+
+        # Direct synthesize_chunk call
+        chunk_out = eng.synthesize_chunk(
+            text="שורה ישירה",
+            speaker=spk,
+            sample=SpeakerSample(id="test_spk", path="test.wav", text="פרומפט בדיקה"),
+            config=cfg,
+        )
+        assert isinstance(chunk_out, np.ndarray)
+        assert len(chunk_out) > 0
 
     print("[PASS] ZonosEngine create synthesis workflow and caching verified.")
 

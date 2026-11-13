@@ -16,12 +16,24 @@ import soundfile as sf
 import torch
 
 from config import Config, Speaker, LocalSpeaker, SpeakerSample, SeedMode
-from engine import VoiceEngine, HebTTSEngine, get_engine
+from engine import (
+    VoiceEngine,
+    HebTTSEngine,
+    get_engine,
+    register_engine,
+    unregister_engine,
+    list_engines,
+    get_engine_class,
+    get_engine_info,
+)
 from make_voice import VoiceMaker
 
 
 class DummyBeepEngine(VoiceEngine):
     """Custom pluggable engine for testing alternative synthesis models."""
+
+    engine_id = "dummy_beep"
+    name = "Dummy Beep Engine"
 
     def __init__(self, sample_rate: int = 16000) -> None:
         self._sr = sample_rate
@@ -35,14 +47,13 @@ class DummyBeepEngine(VoiceEngine):
     def last_tokens_str(self) -> str:
         return "dummy: 10 -> 20 (+10)"
 
-    def create(
+    def synthesize_chunk(
         self,
+        text: str,
         speaker: Speaker,
         sample: Optional[SpeakerSample] = None,
         config: Optional[Config] = None,
-        text: Union[str, List[str]] = "",
-        progress_callback: Optional[Callable[[int, int, str], None]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> np.ndarray:
         self.calls.append({
             "speaker": speaker,
@@ -63,7 +74,7 @@ def test_voice_engine_abc():
     except TypeError:
         pass
 
-    # 2. Subclass missing create() cannot be instantiated
+    # 2. Subclass missing synthesize_chunk() cannot be instantiated
     class IncompleteEngine(VoiceEngine):
         pass
 
@@ -73,11 +84,27 @@ def test_voice_engine_abc():
     except TypeError:
         pass
 
-    # 3. addSeed on concrete subclass
+    # 3. Seed management on concrete subclass
     dummy = DummyBeepEngine()
+    assert dummy.apply_seed(42, SeedMode.Disabled) == 42
     assert dummy.addSeed(42) == 42
-    s = dummy.addSeed(None)
+    s = dummy.apply_seed(None, SeedMode.Enabled)
     assert isinstance(s, int) and s >= 0
+
+    # 4. Engine metadata & inspection
+    assert dummy.engine_id == "dummy_beep"
+    assert dummy.name == "Dummy Beep Engine"
+    assert dummy.is_loaded is False
+    assert dummy.loaded_checkpoint is None
+    info = dummy.info()
+    assert info["engine_id"] == "dummy_beep"
+    assert info["name"] == "Dummy Beep Engine"
+    assert info["sample_rate"] == 16000
+
+    # 5. Lifecycle methods
+    dummy.unload_model()
+    dummy.clear_cache()
+    dummy.clear_last_tokens()
 
     print("[PASS] VoiceEngine ABC contract verified.")
 
@@ -115,40 +142,72 @@ def test_get_engine_factory():
     print("[PASS] get_engine factory verified.")
 
 
+def test_engine_registry():
+    engines = list_engines()
+    assert "hebtts" in engines
+    assert "zonos" in engines
+
+    heb_info = get_engine_info("hebtts")
+    assert heb_info["engine_id"] == "hebtts"
+    assert heb_info["sample_rate"] == 24000
+
+    zonos_info = get_engine_info("zonos")
+    assert zonos_info["engine_id"] == "zonos"
+    assert zonos_info["sample_rate"] == 44100
+
+    # Custom engine registration
+    register_engine(["mock_custom", "custom_alias"], DummyBeepEngine)
+    assert "mock_custom" in list_engines()
+    assert get_engine("mock_custom").sample_rate == 16000
+    assert get_engine("custom_alias").sample_rate == 16000
+
+    # Unregister
+    unregister_engine("mock_custom")
+    assert "mock_custom" not in list_engines()
+    try:
+        get_engine("mock_custom")
+        assert False, "Should raise ValueError after unregister"
+    except ValueError:
+        pass
+
+    print("[PASS] Dynamic engine registry verified.")
+
+
 def test_heb_tts_engine_create():
     mock_model = MagicMock()
     mock_model.last_eos = (195, 425)
 
-    if hasattr(torch, "zeros") and not isinstance(torch.zeros, MagicMock):
-        mock_tensor = torch.ones((1, 2400), dtype=torch.float32) * 0.5
-        mock_encoded = torch.zeros((1, 8, 50), dtype=torch.long)
-    else:
-        mock_tensor = MagicMock()
-        mock_tensor.shape = (1, 2400)
-        mock_tensor.squeeze.return_value.cpu.return_value.numpy.return_value = np.ones(2400, dtype=np.float32) * 0.5
-        mock_encoded = MagicMock()
-
     mock_tok = MagicMock()
+    mock_encoded = torch.zeros((1, 8, 50), dtype=torch.long)
     mock_tok.encode.return_value = [[mock_encoded]]
     mock_tok.sample_rate = 24000
     mock_tok.channels = 1
 
     engine = HebTTSEngine()
+    engine.audio_tokenizer = mock_tok
     engine.load_model = MagicMock(return_value=(mock_model, mock_tok, MagicMock(), MagicMock()))
 
     def fake_synthesize(*args, **kwargs):
         mock_model.last_eos = (195, 425)
-        return mock_tensor
+        engine._last_tokens_str = "195 -> 425 (+230)"
+        return np.ones(2400, dtype=np.float32) * 0.5
 
-    engine.synthesize_line = MagicMock(side_effect=fake_synthesize)
+    engine.synthesize_chunk = MagicMock(side_effect=fake_synthesize)
 
+    assert engine.engine_id == "hebtts"
+    assert engine.name == "HebTTS (VALL-E)"
     assert engine.sample_rate == 24000
     assert engine.last_tokens_str is None
     assert engine.device is not None
     assert engine.device_name is not None
-    assert engine.addSeed(999) == 999
-    rnd_s = engine.addSeed(None)
+    assert engine.apply_seed(999, SeedMode.Disabled) == 999
+    rnd_s = engine.apply_seed(None, SeedMode.Enabled)
     assert isinstance(rnd_s, int) and rnd_s >= 0
+
+    info = engine.info()
+    assert info["engine_id"] == "hebtts"
+    assert info["sample_rate"] == 24000
+    assert "he" in info["supported_languages"]
 
     spk = LocalSpeaker(id="osim", filename="osim.wav", text="שלום עולם")
     cfg = Config(
@@ -176,7 +235,7 @@ def test_heb_tts_engine_create():
     assert isinstance(audio, np.ndarray)
     assert len(progress_events) == 2
     assert engine.last_tokens_str == "195 -> 425 (+230)"
-    assert engine.synthesize_line.call_count == 2
+    assert engine.synthesize_chunk.call_count == 2
     assert cfg.seed == 777
 
     # SeedMode.Enabled generates random seed in cfg.seed
@@ -184,10 +243,17 @@ def test_heb_tts_engine_create():
     engine.create(speaker=spk, sample=spk.sample(), config=cfg_rnd, text="בדיקה")
     assert isinstance(cfg_rnd.seed, int) and cfg_rnd.seed >= 0
 
+    # Test unload_model & clear_cache
+    engine.unload_model()
+    assert engine.is_loaded is False
+    assert engine.loaded_checkpoint is None
+    engine.clear_cache()
+    assert engine.last_tokens_str is None
+
     print("[PASS] HebTTSEngine create and token stats verified.")
 
 
-def test_heb_tts_engine_synthesize_line():
+def test_heb_tts_engine_synthesize_chunk():
     engine = HebTTSEngine()
     engine._device = torch.device("cpu")
 
@@ -197,6 +263,7 @@ def test_heb_tts_engine_synthesize_line():
 
     mock_sample = MagicMock(shape=(1, 24000))
     mock_sample.cpu.return_value = mock_sample
+    mock_sample.squeeze.return_value.cpu.return_value.numpy.return_value = np.zeros(24000, dtype=np.float32)
     mock_audio_tok = MagicMock()
     mock_audio_tok.decode.return_value = [mock_sample]
     mock_audio_tok.mbd_decode.return_value = [mock_sample]
@@ -212,34 +279,38 @@ def test_heb_tts_engine_synthesize_line():
     mock_alef_bert._tokenize.return_value = ["tok1", "tok2"]
     engine.alef_bert_tokenizer = mock_alef_bert
 
+    spk = LocalSpeaker(id="osim", filename="osim.wav", text="פרומפט")
+    sample = SpeakerSample(id="osim", path="osim.wav", text="פרומפט")
+    engine.prepare_speaker = MagicMock(return_value=torch.zeros((1, 8, 20)))
+
     # 1. Non-MBD synthesis: audio_tokenizer.decode called with [(frames, None)]
-    out = engine.synthesize_line(
+    out = engine.synthesize_chunk(
         text="שלום עולם",
-        audio_prompts=torch.zeros((1, 8, 20)),
-        prompt_text="פרומפט",
-        mbd=False,
+        speaker=spk,
+        sample=sample,
+        config=Config(mbd=0),
     )
-    assert out.shape == (1, 24000)
+    assert isinstance(out, np.ndarray)
     assert mock_audio_tok.decode.called
     decode_call_arg = mock_audio_tok.decode.call_args[0][0]
     assert isinstance(decode_call_arg, list)
     assert len(decode_call_arg) == 1
     assert isinstance(decode_call_arg[0], tuple)
-    assert decode_call_arg[0][1] is None, "Second element of decoded frame must be None (not scale/enroll_x_lens)"
+    assert decode_call_arg[0][1] is None, "Second element of decoded frame must be None"
 
     # 2. MBD synthesis: audio_tokenizer.mbd_decode called
     mock_audio_tok.decode.reset_mock()
-    out_mbd = engine.synthesize_line(
+    out_mbd = engine.synthesize_chunk(
         text="שלום עולם",
-        audio_prompts=torch.zeros((1, 8, 20)),
-        prompt_text="פרומפט",
-        mbd=True,
+        speaker=spk,
+        sample=sample,
+        config=Config(mbd=1),
     )
-    assert out_mbd.shape == (1, 24000)
+    assert isinstance(out_mbd, np.ndarray)
     assert mock_audio_tok.mbd_decode.called
     assert not mock_audio_tok.decode.called
 
-    print("[PASS] HebTTSEngine synthesize_line device contracts and vocoder routing verified.")
+    print("[PASS] HebTTSEngine synthesize_chunk device contracts and vocoder routing verified.")
 
 
 def test_voice_engine_lifecycle():
@@ -261,7 +332,7 @@ def test_voice_engine_lifecycle():
     parts_prep = engine.prepare_text("משפט ראשון. משפט שני.", Config(max_chunk_size=15))
     assert parts_prep == ["משפט ראשון.", "משפט שני."]
 
-    # 2. HebTTSEngine prepare_text with nikud conversion
+    # 2. HebTTSEngine prepare_text with nikud conversion via preprocess_text
     heb_engine = HebTTSEngine()
     cfg_nikud_on = Config(nikud_mode=1)
     cfg_nikud_off = Config(nikud_mode=0)
@@ -316,8 +387,9 @@ def test_voice_maker_with_custom_engine():
 if __name__ == "__main__":
     test_voice_engine_abc()
     test_get_engine_factory()
+    test_engine_registry()
     test_heb_tts_engine_create()
-    test_heb_tts_engine_synthesize_line()
+    test_heb_tts_engine_synthesize_chunk()
     test_voice_engine_lifecycle()
     test_voice_maker_with_custom_engine()
     print("\n🎉 ALL TESTS IN tests/test_engine.py PASSED SUCCESSFULLY!")

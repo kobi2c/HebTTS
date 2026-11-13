@@ -1,18 +1,29 @@
 import random
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Union
 import numpy as np
 
-from config import Config, NoiseFix, Speaker, SpeakerSample
+from config import Config, NoiseFix, SeedMode, Speaker, SpeakerSample
 
 
 class VoiceEngine(ABC):
     """
-    Abstract base class for speech synthesis engines.
-    Subclasses encapsulate model loading, tokenizer management, text preparation,
-    neural audio synthesis, and audio post-processing.
+    Abstract base class defining the speech synthesis engine contract.
+    Subclasses encapsulate engine metadata, model loading/unloading, speaker preparation,
+    chunk-level neural audio synthesis, and audio post-processing.
     """
+
+    engine_id: ClassVar[str] = "base"
+    name: ClassVar[str] = "Base Voice Engine"
+    description: ClassVar[str] = ""
+    default_sample_rate: ClassVar[int] = 24000
+    supported_languages: ClassVar[List[str]] = ["he"]
+
+    @property
+    def sample_rate(self) -> int:
+        """Output audio sampling rate in Hz."""
+        return self.default_sample_rate
 
     @property
     def device(self) -> Any:
@@ -25,28 +36,84 @@ class VoiceEngine(ABC):
         return "CPU"
 
     @property
-    def sample_rate(self) -> int:
-        """Output audio sampling rate in Hz (default: 24000)."""
-        return 24000
+    def is_loaded(self) -> bool:
+        """Indicates whether neural model weights are currently resident in memory."""
+        return False
+
+    @property
+    def loaded_checkpoint(self) -> Optional[str]:
+        """Identifier or path of the currently resident checkpoint or model variant."""
+        return None
 
     @property
     def last_tokens_str(self) -> Optional[str]:
         """String representation of token statistics from the last synthesis (e.g. '195 -> 425 (+230)')."""
         return None
 
+    def info(self) -> Dict[str, Any]:
+        """Returns a serializable dictionary describing engine metadata and state."""
+        return {
+            "engine_id": self.engine_id,
+            "name": self.name,
+            "description": self.description,
+            "sample_rate": self.sample_rate,
+            "device": str(self.device),
+            "device_name": self.device_name,
+            "is_loaded": self.is_loaded,
+            "loaded_checkpoint": self.loaded_checkpoint,
+            "supported_languages": list(self.supported_languages),
+            "last_tokens_str": self.last_tokens_str,
+        }
+
+    # --- Model & Cache Lifecycle ---
+
     def load_model(self, checkpoint: Optional[str] = None, **kwargs: Any) -> Any:
         """Pre-loads model weights or verifies readiness (no-op by default)."""
         pass
 
-    def addSeed(self, seed: Optional[int] = None) -> int:
+    def unload_model(self) -> None:
+        """Unloads model weights from memory and clears accelerator caches."""
+        pass
+
+    def clear_cache(self) -> None:
+        """Clears cached speaker embeddings, audio prompts, and intermediate buffers."""
+        pass
+
+    def clear_last_tokens(self) -> None:
+        """Resets token usage string when no audio is produced."""
+        pass
+
+    # --- RNG & Seed Management ---
+
+    def apply_seed(
+        self,
+        seed: Optional[int] = None,
+        mode: Union[SeedMode, int, bool] = SeedMode.Enabled,
+    ) -> int:
         """
-        Configures the random seed for reproducible synthesis.
-        If seed is None, generates a random non-negative integer.
+        Configures the random seed for reproducible synthesis across Python, NumPy, and PyTorch.
         Returns the resolved seed.
         """
-        if seed is None:
-            seed = random.randint(0, 2**31 - 1)
-        return int(seed)
+        if int(mode) == int(SeedMode.Enabled) or seed is None:
+            resolved = random.randint(0, 2**31 - 1)
+        else:
+            resolved = int(seed)
+
+        random.seed(resolved)
+        np.random.seed(resolved % (2**32 - 1))
+        try:
+            import torch
+            torch.manual_seed(resolved)
+        except Exception:
+            pass
+
+        return resolved
+
+    def addSeed(self, seed: Optional[int] = None) -> int:
+        """Backwards-compatible seed generator alias."""
+        return self.apply_seed(seed, SeedMode.Disabled if seed is not None else SeedMode.Enabled)
+
+    # --- Text Preparation & Splitting ---
 
     @staticmethod
     def split_text(text: str, max_chunk_size: int = 100) -> List[str]:
@@ -116,28 +183,58 @@ class VoiceEngine(ABC):
             all_combined_parts.extend(combined_parts)
         return all_combined_parts
 
+    def preprocess_text(self, text: str, config: Optional[Config] = None) -> str:
+        """
+        Engine-specific hook for text normalization (e.g. vocalization, phonetic conversion).
+        Defaults to returning the input text unchanged.
+        """
+        return text
+
     def prepare_text(
         self,
         text: Union[str, List[str]],
         config: Optional[Config] = None,
     ) -> List[str]:
         """
-        Prepares raw text into chunks not exceeding config.max_chunk_size.
-        Splits by sentences (.!?), clauses (,;:), and words.
+        Prepares raw text into non-empty chunks not exceeding config.max_chunk_size,
+        applying preprocess_text normalization to each chunk.
         """
         cfg = config or Config()
-        max_chunk_size=cfg.max_chunk_size
+        max_chunk_size = cfg.max_chunk_size
 
         if isinstance(text, str):
-            return self.split_text(text, max_chunk_size=max_chunk_size)
+            raw_lines = self.split_text(text, max_chunk_size=max_chunk_size)
         elif isinstance(text, (list, tuple)):
-            chunks: List[str] = []
+            raw_lines = []
             for item in text:
-                chunks.extend(self.split_text(str(item), max_chunk_size=max_chunk_size))
-            return chunks
+                raw_lines.extend(self.split_text(str(item), max_chunk_size=max_chunk_size))
         else:
             raw = str(text).strip()
-            return self.split_text(raw, max_chunk_size=max_chunk_size) if raw else []
+            raw_lines = self.split_text(raw, max_chunk_size=max_chunk_size) if raw else []
+
+        prepared: List[str] = []
+        for line in raw_lines:
+            processed = self.preprocess_text(line, cfg).strip()
+            if processed:
+                prepared.append(processed)
+        return prepared
+
+    # --- Speaker Preparation Hook ---
+
+    def prepare_speaker(
+        self,
+        speaker: Speaker,
+        sample: Optional[SpeakerSample] = None,
+        config: Optional[Config] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Hook to compute or cache speaker prompt tokens or embeddings once prior to chunk synthesis.
+        Returns the cached prompt representation or None.
+        """
+        return None
+
+    # --- Audio Post-Processing ---
 
     def post_create(
         self,
@@ -152,7 +249,7 @@ class VoiceEngine(ABC):
             return audio
 
         cfg = config or Config()
-        processed = audio.copy()
+        processed = np.asarray(audio, dtype=np.float32).copy()
 
         # Peak normalization if clipping
         max_val = np.abs(processed).max() if len(processed) > 0 else 0.0
@@ -172,9 +269,36 @@ class VoiceEngine(ABC):
                 fade_out_ms=cfg.fade_ms,
             )
 
-        return processed
+        return np.asarray(processed, dtype=np.float32)
+
+    # --- Abstract Chunk Synthesis ---
 
     @abstractmethod
+    def synthesize_chunk(
+        self,
+        text: str,
+        speaker: Speaker,
+        sample: Optional[SpeakerSample] = None,
+        config: Optional[Config] = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """
+        Synthesizes a single chunk of text into a 1D float32 numpy audio waveform.
+
+        Args:
+            text: Single chunk of text to synthesize.
+            speaker: Speaker instance providing voice identity.
+            sample: Resolved SpeakerSample reference.
+            config: Configuration hyperparameters.
+            **kwargs: Engine-specific parameters.
+
+        Returns:
+            np.ndarray: 1D float32 audio waveform.
+        """
+        raise NotImplementedError
+
+    # --- Template Method: create ---
+
     def create(
         self,
         speaker: Speaker,
@@ -185,17 +309,65 @@ class VoiceEngine(ABC):
         **kwargs: Any,
     ) -> np.ndarray:
         """
-        Synthesizes text into an audio waveform.
+        Template method orchestrating the complete text-to-speech synthesis pipeline:
+        1. Configures RNG seeds.
+        2. Splits and preprocesses text into chunks.
+        3. Prepares reference speaker representation once.
+        4. Synthesizes each chunk, interleaving inter-sentence pause silence.
+        5. Concatenates chunks and applies post-synthesis normalization/fading.
 
         Args:
             speaker: Speaker instance providing voice identity and reference audio/text.
-            sample: Optional SpeakerSample override (e.g. for chained prompts). Defaults to speaker.sample().
-            config: Optional Config instance for hyperparameters (seed, temperature, pause_duration, fade_ms, etc.).
+            sample: Optional SpeakerSample override. Defaults to speaker.sample().
+            config: Optional Config instance for hyperparameters.
             text: Text to synthesize (single string or list of text segments).
-            progress_callback: Optional callback func(line_idx, total_lines, desc) for progress updates.
-            **kwargs: Engine-specific parameters.
+            progress_callback: Optional callback func(chunk_idx, total_chunks, desc).
+            **kwargs: Engine-specific parameters forwarded to synthesize_chunk().
 
         Returns:
             np.ndarray: Audio waveform samples as a 1D float32 array.
         """
-        raise NotImplementedError
+        cfg = config or Config()
+
+        # 1. Configure RNG seed
+        cfg.seed = self.apply_seed(cfg.seed, cfg.seed_mode)
+
+        # 2. Text preparation
+        lines = self.prepare_text(text, cfg)
+        if not lines:
+            self.clear_last_tokens()
+            return np.zeros(0, dtype=np.float32)
+
+        # 3. Resolve speaker sample and prepare speaker embedding/prompts
+        resolved_sample = sample if sample is not None else speaker.sample()
+        self.prepare_speaker(speaker, resolved_sample, config=cfg, **kwargs)
+
+        # 4. Multi-chunk synthesis with pause interleaving
+        pause_sec = float(cfg.pause_duration) if hasattr(cfg, "pause_duration") else 0.3
+        silence_samples = int(self.sample_rate * pause_sec)
+        silence = np.zeros(silence_samples, dtype=np.float32) if (pause_sec > 0 and len(lines) > 1) else None
+
+        segments: List[np.ndarray] = []
+        total_lines = len(lines)
+        for i, line in enumerate(lines):
+            if progress_callback is not None:
+                progress_callback(i, total_lines, f"Synthesizing line {i + 1}/{total_lines}...")
+
+            chunk_audio = self.synthesize_chunk(
+                text=line,
+                speaker=speaker,
+                sample=resolved_sample,
+                config=cfg,
+                **kwargs,
+            )
+            if len(chunk_audio) > 0:
+                segments.append(chunk_audio)
+                if silence is not None and i < total_lines - 1:
+                    segments.append(silence)
+
+        if not segments:
+            self.clear_last_tokens()
+            return np.zeros(0, dtype=np.float32)
+
+        combined = np.concatenate(segments) if len(segments) > 1 else segments[0]
+        return self.post_create(combined, cfg)
