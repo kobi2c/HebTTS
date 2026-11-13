@@ -16,6 +16,7 @@ if str(_ZONOS_SRC) not in sys.path:
 
 from config import Config, SeedMode, Speaker, SpeakerSample
 from ..VoiceEngine import VoiceEngine
+from ..EngineInfo import EngineInfo
 
 
 class ZonosEngine(VoiceEngine):
@@ -25,11 +26,13 @@ class ZonosEngine(VoiceEngine):
     conditioning dictionary assembly, and post-creation audio processing.
     """
 
-    engine_id: ClassVar[str] = "zonos"
-    name: ClassVar[str] = "Zonos (Zyphra)"
-    description: ClassVar[str] = "Continuous-space hybrid architecture with DAC neural audio codec. Expressive synthesis at 44.1 kHz."
-    default_sample_rate: ClassVar[int] = 44100
-    supported_languages: ClassVar[List[str]] = ["he", "en-us", "en-gb", "fr-fr", "de", "es", "cmn", "ja"]
+    info: ClassVar[EngineInfo] = EngineInfo(
+        id="zonos",
+        name="Zonos (Zyphra)",
+        description="Continuous-space hybrid architecture with DAC neural audio codec. Expressive synthesis at 44.1 kHz.",
+        sample_rate=44100,
+        languages=["he", "en-us", "en-gb", "fr-fr", "de", "es", "cmn", "ja"],
+    )
 
     DEFAULT_MODEL_CHOICE: str = "notmax123/Zonos-Hebrew"
     DEFAULT_LANGUAGE: str = "he"

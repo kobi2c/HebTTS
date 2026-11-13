@@ -237,8 +237,7 @@ class Chunk:
         self.proc_time = time.time() - t_synth_start
 
         self.audio = audio_np
-        sr_val = getattr(getattr(voice_maker, "engine", None), "sample_rate", 24000)
-        self.sample_rate = sr_val if isinstance(sr_val, (int, float)) else 24000
+        self.sample_rate = voice_maker.engine.info.sample_rate
         self.duration = len(audio_np) / float(self.sample_rate)
 
         # Save individual chunk wav and txt
@@ -248,8 +247,7 @@ class Chunk:
         self.status = ChunkStatus.CREATED_T if is_overridden else ChunkStatus.CREATED_S
 
         # Retrieve token usage from engine
-        raw_tokens = getattr(getattr(voice_maker, "engine", None), "last_tokens_str", None)
-        self.tokens_str = raw_tokens if isinstance(raw_tokens, str) else "-"
+        self.tokens_str = voice_maker.engine.last_tokens_str or "-"
         return audio_np
 
     def format_table_row(self, total_chunks: int) -> str:

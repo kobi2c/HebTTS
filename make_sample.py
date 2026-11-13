@@ -122,6 +122,7 @@ class SampleMakerParser(argparse.ArgumentParser):
 class SampleMaker:
     DEFAULT_TOKENS_FILE = "engine/heb_tts/tokenizer/unique_words_tokens_all.k2symbols"
     DEFAULT_VOCAB_FILE = "engine/heb_tts/tokenizer/vocab.txt"
+    engine: Optional[VoiceEngine] = None
 
     def __init__(
         self,
@@ -203,8 +204,7 @@ class SampleMaker:
         self._print_table("Available speakers:", speakers, fields)
 
     def print_checkpoints(self) -> None:
-        engine = getattr(self, "engine", None)
-        if engine is not None and type(engine).__name__ == "ZonosEngine":
+        if self.engine is not None and self.engine.info.id == "zonos":
             zonos_models = [
                 {"id": "notmax123/Zonos-Hebrew", "description": "Hebrew (Hybrid)"},
                 {"id": "Zyphra/Zonos-v0.1-transformer", "description": "English / Multi (Transformer)"},
@@ -227,8 +227,7 @@ class SampleMaker:
         self._print_table("Available checkpoints:", checkpoints, fields)
 
     def resolve_checkpoint(self, checkpoint_arg: str) -> Path:
-        engine = getattr(self, "engine", None)
-        if engine is not None and type(engine).__name__ == "ZonosEngine":
+        if self.engine is not None and self.engine.info.id == "zonos":
             zonos_models = {
                 "1": "notmax123/Zonos-Hebrew",
                 "2": "Zyphra/Zonos-v0.1-transformer",
@@ -297,7 +296,7 @@ class SampleMaker:
         self.mbd = bool(parsed.mbd)
         self.nikud_mode = bool(parsed.nikud_mode)
 
-        if getattr(parsed, "engine", None):
+        if parsed.engine:
             self.engine = get_engine(parsed.engine)
 
         return parsed
@@ -418,7 +417,7 @@ class SampleMaker:
             text=lines,
         )
 
-        sr = getattr(self.engine, "sample_rate", 24000)
+        sr = self.engine.info.sample_rate
         audio_tensor = torch.from_numpy(audio_np).unsqueeze(0) if isinstance(audio_np, np.ndarray) else audio_np
 
         saved_path: Optional[Path] = None

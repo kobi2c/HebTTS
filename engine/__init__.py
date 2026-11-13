@@ -1,10 +1,8 @@
 import sys
 from typing import Any, Callable, Dict, List, Optional, Type, Union
+from .EngineInfo import EngineInfo
 from .VoiceEngine import VoiceEngine
 from .heb_tts import HebTTSEngine
-
-# Backward-compatibility alias for legacy imports
-sys.modules.setdefault("engine.base", sys.modules[__name__])
 
 
 def _zonos_loader(**kwargs: Any) -> VoiceEngine:
@@ -77,16 +75,9 @@ def get_engine_class(engine_id: str) -> Type[VoiceEngine]:
     return type(inst)
 
 
-def get_engine_info(engine_id: str) -> Dict[str, Any]:
-    """Retrieves metadata info dictionary for an engine without fully instantiating it if possible."""
-    cls = get_engine_class(engine_id)
-    return {
-        "engine_id": getattr(cls, "engine_id", engine_id),
-        "name": getattr(cls, "name", engine_id),
-        "description": getattr(cls, "description", ""),
-        "sample_rate": getattr(cls, "default_sample_rate", getattr(cls, "SAMPLE_RATE", 24000)),
-        "supported_languages": list(getattr(cls, "supported_languages", ["he"])),
-    }
+def get_engine_info(engine_id: str) -> EngineInfo:
+    """Retrieves EngineInfo metadata for an engine without fully instantiating it if possible."""
+    return get_engine_class(engine_id).info
 
 
 def get_engine(
@@ -126,6 +117,7 @@ def __getattr__(name: str) -> Any:
 
 
 __all__ = [
+    "EngineInfo",
     "VoiceEngine",
     "HebTTSEngine",
     "ZonosEngine",

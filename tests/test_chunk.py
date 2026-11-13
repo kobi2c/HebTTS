@@ -334,7 +334,7 @@ def test_chunk_input_override():
 
         mock_vm = MagicMock()
         mock_vm.engine.last_tokens_str = "100 -> 200 (+100)"
-        mock_vm.engine.sample_rate = 24000
+        mock_vm.engine.info.sample_rate = 24000
         mock_vm.synthesize_chunk.return_value = np.ones(24000, dtype=np.float32) * 0.1
 
         # 2. Normal synthesize without .input.txt -> CREATED_S

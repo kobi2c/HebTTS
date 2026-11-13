@@ -556,7 +556,7 @@ class GradioPage:
             if isinstance(engine, str):
                 self.config.engine = engine
             else:
-                eng_id = getattr(engine, "engine_id", "hebtts")
+                eng_id = engine.info.id
                 self.config.engine = eng_id
                 self._engines[eng_id] = engine
 
@@ -577,7 +577,7 @@ class GradioPage:
 
     @engine.setter
     def engine(self, eng: VoiceEngine) -> None:
-        eng_id = getattr(eng, "engine_id", "hebtts")
+        eng_id = eng.info.id
         self._engines[eng_id] = eng
         self.config.engine = eng_id
 
@@ -602,12 +602,12 @@ class GradioPage:
         """Returns rich formatted badge markdown describing the active engine using engine metadata."""
         try:
             eng = self._engines.get(engine_id) or get_engine(engine_id)
-            info = eng.info()
+            info = eng.live_info()
             return (
-                f"⚡ **Active Engine**: `{info['name']}` &nbsp;|&nbsp; "
-                f"🔊 **Sample Rate**: `{info['sample_rate']:,} Hz` &nbsp;|&nbsp; "
-                f"🧠 **Architecture**: {info['description']} &nbsp;|&nbsp; "
-                f"💻 **Device**: `{info['device_name']}` (`{info['device']}`)"
+                f"⚡ **Active Engine**: `{info.name}` &nbsp;|&nbsp; "
+                f"🔊 **Sample Rate**: `{info.sample_rate:,} Hz` &nbsp;|&nbsp; "
+                f"🧠 **Architecture**: {info.description} &nbsp;|&nbsp; "
+                f"💻 **Device**: `{info.device_name}` (`{info.device}`)"
             )
         except Exception:
             if engine_id == "zonos":
@@ -797,7 +797,7 @@ class GradioPage:
         if nikud_mode == NikudMode.Enabled and self.nikud_maker.has(cfg.text):
             ktiv_male_text = self.nikud_maker.convert(cfg.text)
 
-        return (target_engine.sample_rate, audio_np), cfg.seed, ktiv_male_text
+        return (target_engine.info.sample_rate, audio_np), cfg.seed, ktiv_male_text
 
     def build_interface(self) -> gr.Blocks:
         """Constructs the tabbed, multi-engine Gradio interface."""

@@ -14,33 +14,35 @@ import numpy as np
 import torch
 
 from config import Config, LocalSpeaker, SeedMode, SpeakerSample
-from engine import VoiceEngine, get_engine
+from engine import EngineInfo, VoiceEngine, get_engine
 from engine.zonos import ZonosEngine
 
 
 def test_zonos_engine_contract():
     eng = ZonosEngine()
     assert isinstance(eng, VoiceEngine)
-    assert eng.engine_id == "zonos"
-    assert eng.name == "Zonos (Zyphra)"
-    assert eng.sample_rate == 44100
+    assert eng.info.id == "zonos"
+    assert eng.info.name == "Zonos (Zyphra)"
+    assert eng.info.sample_rate == 44100
     assert eng.default_model_choice == "notmax123/Zonos-Hebrew"
     assert eng.last_tokens_str is None
     assert eng.cached_model_choice is None
     assert eng.is_loaded is False
     assert eng.loaded_checkpoint is None
 
-    # Engine info dictionary
-    info = eng.info()
-    assert info["engine_id"] == "zonos"
-    assert info["name"] == "Zonos (Zyphra)"
-    assert info["sample_rate"] == 44100
-    assert "he" in info["supported_languages"]
+    # Engine info
+    info = eng.live_info()
+    assert isinstance(info, EngineInfo)
+    assert info.id == "zonos"
+    assert info.name == "Zonos (Zyphra)"
+    assert info.sample_rate == 44100
+    assert "he" in info.languages
+    assert isinstance(info.to_dict(), dict)
 
     # Custom model choice & device
     eng_custom = ZonosEngine(model_choice="Zyphra/Zonos-v0.1-transformer", device="cpu")
     assert eng_custom.default_model_choice == "Zyphra/Zonos-v0.1-transformer"
-    assert eng_custom.sample_rate == 44100
+    assert eng_custom.info.sample_rate == 44100
     assert "cpu" in str(eng_custom.device).lower()
 
     # Lifecycle methods
@@ -54,7 +56,7 @@ def test_zonos_engine_contract():
 def test_zonos_engine_factory():
     eng1 = get_engine("zonos")
     assert isinstance(eng1, ZonosEngine)
-    assert eng1.sample_rate == 44100
+    assert eng1.info.sample_rate == 44100
 
     eng2 = get_engine("zonos_hebrew")
     assert isinstance(eng2, ZonosEngine)

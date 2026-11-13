@@ -363,7 +363,7 @@ class VoiceMaker:
         # 5. Save merged audio and subtitles
         merged_wav, total_sec = chunks.join_audio()
         if merged_wav is not None:
-            chunks.save_merged(output_dir, basename, self.format, merged_wav, sample_rate=getattr(self.engine, 'sample_rate', 24000))
+            chunks.save_merged(output_dir, basename, self.format, merged_wav, sample_rate=self.engine.info.sample_rate)
             chunks.save_srt(output_dir, basename)
 
         print(f"\nBatch generation completed successfully! Outputs are in: {output_dir}\n")

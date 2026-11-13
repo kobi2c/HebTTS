@@ -5,6 +5,7 @@ from typing import Any, Callable, ClassVar, Dict, List, Optional, Union
 import numpy as np
 
 from config import Config, NoiseFix, SeedMode, Speaker, SpeakerSample
+from .EngineInfo import EngineInfo
 
 
 class VoiceEngine(ABC):
@@ -14,16 +15,13 @@ class VoiceEngine(ABC):
     chunk-level neural audio synthesis, and audio post-processing.
     """
 
-    engine_id: ClassVar[str] = "base"
-    name: ClassVar[str] = "Base Voice Engine"
-    description: ClassVar[str] = ""
-    default_sample_rate: ClassVar[int] = 24000
-    supported_languages: ClassVar[List[str]] = ["he"]
-
-    @property
-    def sample_rate(self) -> int:
-        """Output audio sampling rate in Hz."""
-        return self.default_sample_rate
+    info: ClassVar[EngineInfo] = EngineInfo(
+        id="base",
+        name="Base Voice Engine",
+        description="",
+        sample_rate=24000,
+        languages=["he"],
+    )
 
     @property
     def device(self) -> Any:
@@ -50,20 +48,20 @@ class VoiceEngine(ABC):
         """String representation of token statistics from the last synthesis (e.g. '195 -> 425 (+230)')."""
         return None
 
-    def info(self) -> Dict[str, Any]:
-        """Returns a serializable dictionary describing engine metadata and state."""
-        return {
-            "engine_id": self.engine_id,
-            "name": self.name,
-            "description": self.description,
-            "sample_rate": self.sample_rate,
-            "device": str(self.device),
-            "device_name": self.device_name,
-            "is_loaded": self.is_loaded,
-            "loaded_checkpoint": self.loaded_checkpoint,
-            "supported_languages": list(self.supported_languages),
-            "last_tokens_str": self.last_tokens_str,
-        }
+    def live_info(self) -> EngineInfo:
+        """Returns an EngineInfo merging static metadata with current runtime state."""
+        return EngineInfo(
+            id=self.info.id,
+            name=self.info.name,
+            description=self.info.description,
+            sample_rate=self.info.sample_rate,
+            device=str(self.device),
+            device_name=self.device_name,
+            is_loaded=self.is_loaded,
+            loaded_checkpoint=self.loaded_checkpoint,
+            languages=list(self.info.languages),
+            last_tokens_str=self.last_tokens_str,
+        )
 
     # --- Model & Cache Lifecycle ---
 
@@ -108,10 +106,6 @@ class VoiceEngine(ABC):
             pass
 
         return resolved
-
-    def addSeed(self, seed: Optional[int] = None) -> int:
-        """Backwards-compatible seed generator alias."""
-        return self.apply_seed(seed, SeedMode.Disabled if seed is not None else SeedMode.Enabled)
 
     # --- Text Preparation & Splitting ---
 
@@ -258,13 +252,13 @@ class VoiceEngine(ABC):
 
         # Leading noise trimming with safety padding
         if cfg.trim_noise:
-            processed = NoiseFix.trim(processed, sr=self.sample_rate, pad_ms=cfg.pad_ms)
+            processed = NoiseFix.trim(processed, sr=self.info.sample_rate, pad_ms=cfg.pad_ms)
 
         # Micro fade-in and fade-out
         if cfg.fade_ms > 0:
             processed = NoiseFix.fade(
                 processed,
-                sr=self.sample_rate,
+                sr=self.info.sample_rate,
                 fade_in_ms=cfg.fade_ms,
                 fade_out_ms=cfg.fade_ms,
             )
@@ -344,7 +338,7 @@ class VoiceEngine(ABC):
 
         # 4. Multi-chunk synthesis with pause interleaving
         pause_sec = float(cfg.pause_duration) if hasattr(cfg, "pause_duration") else 0.3
-        silence_samples = int(self.sample_rate * pause_sec)
+        silence_samples = int(self.info.sample_rate * pause_sec)
         silence = np.zeros(silence_samples, dtype=np.float32) if (pause_sec > 0 and len(lines) > 1) else None
 
         segments: List[np.ndarray] = []

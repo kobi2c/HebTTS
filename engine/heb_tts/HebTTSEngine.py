@@ -12,6 +12,7 @@ from engine.heb_tts.valle.data.collation import get_text_token_collater
 from engine.heb_tts.valle.data.hebrew_root_tokenizer import AlefBERTRootTokenizer, replace_chars
 from engine.heb_tts.valle.models import get_model
 from ..VoiceEngine import VoiceEngine
+from ..EngineInfo import EngineInfo
 
 
 class HebTTSEngine(VoiceEngine):
@@ -20,11 +21,13 @@ class HebTTSEngine(VoiceEngine):
     Caches model weights, vocoders, and prompt audio embeddings for optimal performance.
     """
 
-    engine_id: ClassVar[str] = "hebtts"
-    name: ClassVar[str] = "HebTTS (VALL-E)"
-    description: ClassVar[str] = "Hebrew VALL-E neural codec language model. Fast autoregressive synthesis at 24 kHz."
-    default_sample_rate: ClassVar[int] = 24000
-    supported_languages: ClassVar[List[str]] = ["he"]
+    info: ClassVar[EngineInfo] = EngineInfo(
+        id="hebtts",
+        name="HebTTS (VALL-E)",
+        description="Hebrew VALL-E neural codec language model. Fast autoregressive synthesis at 24 kHz.",
+        sample_rate=24000,
+        languages=["he"],
+    )
 
     PACKAGE_DIR = Path(__file__).resolve().parent
     DEFAULT_TOKENS_FILE = str(PACKAGE_DIR / "tokenizer" / "unique_words_tokens_all.k2symbols")

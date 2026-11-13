@@ -17,6 +17,7 @@ import torch
 
 from config import Config, Speaker, LocalSpeaker, SpeakerSample, SeedMode
 from engine import (
+    EngineInfo,
     VoiceEngine,
     HebTTSEngine,
     get_engine,
@@ -32,16 +33,22 @@ from make_voice import VoiceMaker
 class DummyBeepEngine(VoiceEngine):
     """Custom pluggable engine for testing alternative synthesis models."""
 
-    engine_id = "dummy_beep"
-    name = "Dummy Beep Engine"
+    info = EngineInfo(
+        id="dummy_beep",
+        name="Dummy Beep Engine",
+        sample_rate=16000,
+        languages=["he"],
+    )
 
     def __init__(self, sample_rate: int = 16000) -> None:
-        self._sr = sample_rate
+        if sample_rate != 16000:
+            self.info = EngineInfo(
+                id="dummy_beep",
+                name="Dummy Beep Engine",
+                sample_rate=sample_rate,
+                languages=["he"],
+            )
         self.calls = []
-
-    @property
-    def sample_rate(self) -> int:
-        return self._sr
 
     @property
     def last_tokens_str(self) -> str:
@@ -61,8 +68,8 @@ class DummyBeepEngine(VoiceEngine):
             "config": config,
             "text": text,
         })
-        # Produce 0.5s of audio at 16kHz
-        num_samples = int(self._sr * 0.5)
+        # Produce 0.5s of audio at sample_rate
+        num_samples = int(self.info.sample_rate * 0.5)
         return np.ones(num_samples, dtype=np.float32) * 0.2
 
 
@@ -87,19 +94,21 @@ def test_voice_engine_abc():
     # 3. Seed management on concrete subclass
     dummy = DummyBeepEngine()
     assert dummy.apply_seed(42, SeedMode.Disabled) == 42
-    assert dummy.addSeed(42) == 42
     s = dummy.apply_seed(None, SeedMode.Enabled)
     assert isinstance(s, int) and s >= 0
 
     # 4. Engine metadata & inspection
-    assert dummy.engine_id == "dummy_beep"
-    assert dummy.name == "Dummy Beep Engine"
+    assert dummy.info.id == "dummy_beep"
+    assert dummy.info.name == "Dummy Beep Engine"
     assert dummy.is_loaded is False
     assert dummy.loaded_checkpoint is None
-    info = dummy.info()
-    assert info["engine_id"] == "dummy_beep"
-    assert info["name"] == "Dummy Beep Engine"
-    assert info["sample_rate"] == 16000
+    info = dummy.live_info()
+    assert isinstance(info, EngineInfo)
+    assert info.id == "dummy_beep"
+    assert info.name == "Dummy Beep Engine"
+    assert info.sample_rate == 16000
+    assert isinstance(info.to_dict(), dict)
+    assert info.to_dict()["name"] == "Dummy Beep Engine"
 
     # 5. Lifecycle methods
     dummy.unload_model()
@@ -113,7 +122,7 @@ def test_get_engine_factory():
     # 1. Default -> HebTTSEngine
     eng_def = get_engine()
     assert isinstance(eng_def, HebTTSEngine)
-    assert eng_def.sample_rate == 24000
+    assert eng_def.info.sample_rate == 24000
 
     # 2. String names
     assert isinstance(get_engine("hebtts"), HebTTSEngine)
@@ -148,18 +157,20 @@ def test_engine_registry():
     assert "zonos" in engines
 
     heb_info = get_engine_info("hebtts")
-    assert heb_info["engine_id"] == "hebtts"
-    assert heb_info["sample_rate"] == 24000
+    assert isinstance(heb_info, EngineInfo)
+    assert heb_info.id == "hebtts"
+    assert heb_info.sample_rate == 24000
 
     zonos_info = get_engine_info("zonos")
-    assert zonos_info["engine_id"] == "zonos"
-    assert zonos_info["sample_rate"] == 44100
+    assert isinstance(zonos_info, EngineInfo)
+    assert zonos_info.id == "zonos"
+    assert zonos_info.sample_rate == 44100
 
     # Custom engine registration
     register_engine(["mock_custom", "custom_alias"], DummyBeepEngine)
     assert "mock_custom" in list_engines()
-    assert get_engine("mock_custom").sample_rate == 16000
-    assert get_engine("custom_alias").sample_rate == 16000
+    assert get_engine("mock_custom").info.sample_rate == 16000
+    assert get_engine("custom_alias").info.sample_rate == 16000
 
     # Unregister
     unregister_engine("mock_custom")
@@ -194,9 +205,9 @@ def test_heb_tts_engine_create():
 
     engine.synthesize_chunk = MagicMock(side_effect=fake_synthesize)
 
-    assert engine.engine_id == "hebtts"
-    assert engine.name == "HebTTS (VALL-E)"
-    assert engine.sample_rate == 24000
+    assert engine.info.id == "hebtts"
+    assert engine.info.name == "HebTTS (VALL-E)"
+    assert engine.info.sample_rate == 24000
     assert engine.last_tokens_str is None
     assert engine.device is not None
     assert engine.device_name is not None
@@ -204,10 +215,12 @@ def test_heb_tts_engine_create():
     rnd_s = engine.apply_seed(None, SeedMode.Enabled)
     assert isinstance(rnd_s, int) and rnd_s >= 0
 
-    info = engine.info()
-    assert info["engine_id"] == "hebtts"
-    assert info["sample_rate"] == 24000
-    assert "he" in info["supported_languages"]
+    info = engine.live_info()
+    assert isinstance(info, EngineInfo)
+    assert info.id == "hebtts"
+    assert info.sample_rate == 24000
+    assert "he" in info.languages
+    assert isinstance(info.to_dict(), dict)
 
     spk = LocalSpeaker(id="osim", filename="osim.wav", text="שלום עולם")
     cfg = Config(
